@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canadian Urbex Archive</title>
+  <link rel="icon" type="image/png" href="CUA Logo.png">
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+  />
+
+  <!-- Your CSS -->
+  <link rel="stylesheet" href="style.css">
+  <script src="site-nav.js"></script>
+</head>
+<body class="map-page">
+
+  <div id="gate" class="gate" style="display:none;">
+    <div class="gate-box">
+      <h2>Sign in required</h2>
+      <p id="signedInUser" class="gate-user" style="display:none;"></p>
+      <button id="googleSignInBtn" type="button">Sign in with Google</button>
+      <button id="continueGuestBtn" type="button">Continue without sign in</button>
+      <button id="signOutBtn" type="button" style="display:none;">Sign out</button>
+      <p id="authStatus" class="gate-error"></p>
+    </div>
+  </div>
+
+<header>
+  <a class="header-brand" href="index.html" aria-label="Canadian Urbex Archive home">
+    <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="header-logo-icon">
+    <span class="header-brand-full">Canadian Urbex Archive</span>
+    <span class="header-brand-short">CUA</span>
+  </a>
+  <div class="header-center">
+    <div class="mobile-drawer-header">
+      <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="drawer-logo-icon">
+      <button class="drawer-close-button" type="button" aria-label="Close navigation menu">×</button>
+    </div>
+    <a href="index.html" class="top-nav-link">Home</a>
+    <a href="map.html" class="top-nav-link is-active">Map</a>
+    <a href="resources.html" class="top-nav-link">Resources</a>
+  </div>
+  <div class="header-right">
+    <button class="mobile-menu-button" type="button" aria-label="Open navigation menu"><span></span></button>
+  <div id="accountMenuWrap" class="account-menu-wrap" style="display:none;">
+    <button id="accountMenuBtn" class="account-menu-btn" type="button" aria-expanded="false">
+      <span id="accountMenuName" class="account-menu-name">Account</span>
+      <span id="accountMenuAvatar" class="account-menu-avatar">U</span>
+    </button>
+    <div id="accountDropdown" class="account-dropdown" style="display:none;">
+      <button id="accountSettingsBtn" class="account-dropdown-item" type="button">Settings</button>
+      <button id="accountSignOutBtn" class="account-dropdown-item account-dropdown-item-danger" type="button">Sign Out</button>
+    </div>
+  </div>
+  <button id="headerSignInBtn" class="account-menu-btn" type="button" style="display:none;">Sign in</button>
+  </div>
+</header>
+
+<button id="addSpotBtn" type="button" aria-label="Add a spot" style="display:none;">
+  <svg class="add-spot-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <!-- Pin shape — light grey-blue to match button controls -->
+    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+          fill="#c8d8ff" opacity="0.8"/>
+    <!-- Dark inner circle -->
+    <circle cx="12" cy="9" r="3.4" fill="rgba(12,22,44,0.95)"/>
+  </svg>
+</button>
+
+<div id="map"></div>
+<div id="imageOverlay" class="image-overlay" style="display:none;"><img alt=""></div>
+
+<!-- Settings Modal -->
+<div id="settingsModal" class="settings-modal" style="display:none;">
+  <div class="settings-modal-backdrop"></div>
+  <div class="settings-modal-content">
+    <div class="settings-modal-header">
+      <h2>Site Settings</h2>
+      <button class="settings-modal-close" type="button" aria-label="Close settings">x</button>
+    </div>
+    
+    <div class="settings-modal-body">
+      <!-- Clustering Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <h3>Display / Performance</h3>
+        </div>
+        <div class="settings-option">
+          <label class="settings-toggle-label">
+            <input type="checkbox" id="clusteringToggle" class="settings-toggle-input" checked>
+            <span class="settings-toggle-switch"></span>
+            <span class="settings-toggle-text">Marker Clustering</span>
+          </label>
+          <p class="settings-option-description">Group nearby markers for cleaner map view</p>
+        </div>
+      </div>
+
+      <!-- Privacy & Cookies Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <h3>Privacy & Data</h3>
+        </div>
+        
+        <div class="settings-privacy-card">
+          <div class="privacy-icon">🔒</div>
+          <div class="privacy-content">
+            <h4>Your Data, Your Control</h4>
+            <p class="privacy-description">We respect your privacy. Here's what you should know:</p>
+            
+            <div class="privacy-items">
+              <div class="privacy-item">
+                <span class="privacy-badge cache">CACHE</span>
+                <div>
+                  <strong>Local Cache (120 seconds)</strong>
+                  <p>Spot data is temporarily stored on your device for faster loading.</p>
+                </div>
+              </div>
+              
+              <div class="privacy-item">
+                <span class="privacy-badge tracking">TRACKING</span>
+                <div>
+                  <strong>No Tracking</strong>
+                  <p>We don't track your location or browsing behavior. Your privacy matters.</p>
+                </div>
+              </div>
+              
+              <div class="privacy-item">
+                <span class="privacy-badge analytics">ANALYTICS</span>
+                <div>
+                  <strong>Basic Analytics (Optional)</strong>
+                  <p>Help us improve by sending anonymous usage data. You can disable this anytime.</p>
+                  <label class="settings-toggle-label" style="margin-top: 8px;">
+                    <input type="checkbox" id="analyticsToggle" class="settings-toggle-input">
+                    <span class="settings-toggle-switch"></span>
+                    <span class="settings-toggle-text">Enable Analytics</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <p class="privacy-footer">Read our full <a href="#" id="privacyPolicyLink" class="privacy-link">Privacy Policy</a> for details.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Privacy Policy Modal -->
+<div id="privacyPolicyModal" class="settings-modal" style="display:none;">
+  <div class="settings-modal-backdrop privacy-policy-backdrop"></div>
+  <div class="settings-modal-content privacy-policy-modal-content">
+    <div class="settings-modal-header">
+      <div class="settings-modal-title-group">
+        <button class="privacy-policy-back" type="button" aria-label="Back to site settings">🡄</button>
+        <h2>Privacy Policy</h2>
+      </div>
+      <button class="settings-modal-close privacy-policy-close" type="button" aria-label="Close privacy policy">x</button>
+    </div>
+
+    <div class="settings-modal-body privacy-policy-body">
+      <section class="privacy-policy-section">
+        <h3>Overview</h3>
+        <p>Canadian Urbex Archive is built to show and manage map spots while keeping privacy simple. This policy explains what the site stores, what it does not track, and how optional analytics work.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Local Cache</h3>
+        <p>Spot data may be stored temporarily on your device for about 120 seconds. This short cache helps the map load faster and reduces repeated data requests. The cache is local to your browser and expires automatically.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Location Privacy</h3>
+        <p>The site does not track your location in the background. If you use a locate button or browser location feature, your browser may ask for permission and the location is used only for that map action. We do not store a browsing trail of where you move on the map.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Account Data</h3>
+        <p>If you sign in, the site may use basic account details such as your user ID, display name, email address, role, and profile details needed for account features. Guest access avoids account-based features, but some map data may still load normally.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Spot Data and Uploads</h3>
+        <p>When authorized users add or edit spots, the submitted information can include the spot name, description, coordinates, class, access role, timestamps, and uploaded images. This information is stored so the map can display it to users with the right access level.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Optional Analytics</h3>
+        <p>Analytics are optional. If enabled, anonymous usage information may be used to understand general site activity and improve performance. Analytics are not intended to identify you personally, and you can turn them off from Site Settings at any time.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>No Tracking Promise</h3>
+        <p>We do not sell your data, track your browsing behavior across other websites, or build advertising profiles. The privacy controls in Site Settings are meant to keep this clear and easy to change.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h3>Data Access and Control</h3>
+        <p>Your account settings and privacy preferences can be changed from the site controls where available. If data needs to be corrected or removed, you may contact me via Email (liamnova9@gmail.com) or Discord (@Jollyintegral) for assistance.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script type="module" src="script.js"></script>
+</body>
+</html>

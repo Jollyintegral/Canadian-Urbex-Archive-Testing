@@ -1,0 +1,117 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canadian Urbex Archive</title>  
+  <link rel="icon" type="image/png" href="CUA Logo.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="site-nav.js"></script>
+</head>
+<body class="settings-page">
+  <header>
+    <a class="header-brand" href="index.html" aria-label="Canadian Urbex Archive home">
+      <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="header-logo-icon">
+      <span class="header-brand-full">Canadian Urbex Archive</span>
+      <span class="header-brand-short">CUA</span>
+    </a>
+    <div class="header-center">
+      <div class="mobile-drawer-header">
+        <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="drawer-logo-icon">
+        <button class="drawer-close-button" type="button" aria-label="Close navigation menu">×</button>
+      </div>
+      <a href="index.html" class="top-nav-link">Home</a>
+      <a href="map.html" class="top-nav-link">Map</a>
+      <a href="resources.html" class="top-nav-link">Resources</a>
+    </div>
+    <div class="header-right">
+      <button class="mobile-menu-button" type="button" aria-label="Open navigation menu"><span></span></button>
+    <div id="settingsAccountWrap" class="account-menu-wrap" style="display:none;">
+      <button id="settingsAccountBtn" class="account-menu-btn" type="button" aria-expanded="false">
+        <span id="settingsAccountName" class="account-menu-name">Account</span>
+        <span id="settingsAccountAvatar" class="account-menu-avatar">U</span>
+      </button>
+      <div id="settingsAccountDropdown" class="account-dropdown" style="display:none;">
+        <button id="settingsSignOutBtn" class="account-dropdown-item account-dropdown-item-danger" type="button">Sign Out</button>
+      </div>
+    </div>
+    </div>
+  </header>
+
+  <main class="settings-layout">
+    <aside class="settings-sidebar">
+      <div class="settings-profile-card">
+      <div class="settings-profile-avatar" id="settingsProfileAvatar">U</div>
+      <div class="settings-profile-name" id="settingsProfileName">Loading...</div>
+      <div class="settings-profile-meta" id="settingsProfileMeta"></div>
+      <div class="settings-profile-meta" id="settingsProfileJoined"></div>
+    </div>
+      <button class="settings-nav-item is-active" type="button" data-tab="account">Account Settings</button>
+      <button class="settings-nav-item" type="button" data-tab="profile">Profile</button>
+      <button class="settings-nav-item" type="button" data-tab="privacy">Privacy</button>
+      <button class="settings-nav-item" type="button" data-tab="roles" data-owner-only="true" style="display:none;">Role Dashboard</button>
+    </aside>
+    <section class="settings-panel-main">
+      <div class="settings-mobile-back">
+        <button id="settingsMobileBackBtn" type="button" class="settings-back-button">← Back</button>
+      </div>
+      <div class="settings-tab-panel is-active" data-panel="account">
+        <div class="settings-panel-head">
+          <h1>Account Settings</h1>
+        </div>
+        <div class="settings-form-grid">
+          <label for="settingsDisplayNameInput">Display Name</label>
+          <input id="settingsDisplayNameInput" type="text" maxlength="60" placeholder="Your display name">
+
+          <label for="settingsEmailInput">Account Email</label>
+          <input id="settingsEmailInput" type="email" disabled>
+        </div>
+      </div>
+      <div class="settings-tab-panel" data-panel="profile">
+        <div class="settings-panel-head">
+          <h1>Profile</h1>
+        </div>
+        <div class="settings-form-grid">
+          <label for="settingsProfileBioInput">Bio</label>
+          <input id="settingsProfileBioInput" type="text" maxlength="120" placeholder="Short bio (optional)">
+        </div>
+      </div>
+      <div class="settings-tab-panel" data-panel="privacy">
+        <div class="settings-panel-head">
+          <h1>Privacy</h1>
+        </div>
+        <div class="settings-form-grid">
+          <label>Visibility</label>
+          <input value="Private profile (coming soon)" disabled>
+        </div>
+      </div>
+      <div class="settings-tab-panel" data-panel="roles" data-owner-only="true" style="display:none;">
+        <div class="settings-panel-head">
+          <h1>Role Dashboard</h1>
+        </div>
+        <p class="settings-role-note">Owner only. Change member roles and keep an audit trail.</p>
+        <div id="roleDashboardBlock">
+          <div id="roleUsersCards" class="settings-role-cards" aria-label="User roles"></div>
+          <div class="settings-role-table-wrap">
+            <table class="settings-role-table">
+              <thead>
+                <tr><th>User</th><th>Current Role</th><th>Set Role</th><th>Action</th></tr>
+              </thead>
+              <tbody id="roleUsersTableBody"></tbody>
+            </table>
+          </div>
+          <h2 class="settings-audit-title">Recent Role Changes</h2>
+          <div id="roleAuditList" class="settings-audit-list"></div>
+        </div>
+      </div>
+      <p id="settingsStatusText" class="account-settings-status"></p>
+      <div class="settings-actions">
+        <button id="settingsBackBtn" type="button" class="settings-exit-btn" aria-label="Exit settings">←</button>
+        <button id="settingsSaveBtn" type="button">Save Changes</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

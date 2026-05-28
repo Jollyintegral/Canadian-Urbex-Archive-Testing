@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title></title>
+  <link rel="icon" type="image/png" href="CUA Logo.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="site-nav.js"></script>
+</head>
+<body class="home-page">
+  <header>
+    <a class="header-brand" href="index.html" aria-label="Canadian Urbex Archive home">
+      <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="header-logo-icon">
+      <span class="header-brand-full">Canadian Urbex Archive</span>
+      <span class="header-brand-short">CUA</span>
+    </a>
+    <div class="header-center">
+      <div class="mobile-drawer-header">
+        <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="drawer-logo-icon">
+        <button class="drawer-close-button" type="button" aria-label="Close navigation menu">x</button>
+      </div>
+      <a href="index.html" class="top-nav-link is-active">Home</a>
+      <a href="map.html" class="top-nav-link">Map</a>
+      <a href="resources.html" class="top-nav-link">Resources</a>
+    </div>
+    <div class="header-right">
+      <button class="mobile-menu-button" type="button" aria-label="Open navigation menu"><span></span></button>
+    <div id="homeAccountMenuWrap" class="account-menu-wrap" style="display:none;">
+      <button id="homeAccountMenuBtn" class="account-menu-btn" type="button" aria-expanded="false">
+        <span id="homeAccountMenuName" class="account-menu-name">Account</span>
+        <span id="homeAccountMenuAvatar" class="account-menu-avatar">U</span>
+      </button>
+      <div id="homeAccountDropdown" class="account-dropdown" style="display:none;">
+        <button id="homeAccountSettingsBtn" class="account-dropdown-item" type="button">Settings</button>
+        <button id="homeAccountSignOutBtn" class="account-dropdown-item account-dropdown-item-danger" type="button">Sign Out</button>
+      </div>
+    </div>
+    <button id="homeHeaderSignInBtn" class="account-menu-btn" type="button" style="display:none;">Sign in</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="home-hero">
+      <div class="home-hero-copy">
+        <p class="home-kicker">Abandoned And Derelict Locations Map</p>
+        <h1>Canadian Urbex Archive</h1>
+        <p class="home-lede">A hub focused on the Alberta region, expanding into other regions across Canada and beyond,sharing research, and keeping exploration organized,.</p>
+        <div class="home-actions">
+          <a class="home-primary-btn" href="map.html">Explore the Map</a>
+          <div class="home-actions-secondary">
+            <a class="home-secondary-btn" href="resources.html">View Tools</a>
+            <a class="home-secondary-btn is-disabled" href="#" aria-disabled="true">Discord (Coming Soon)</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-hero-visual" aria-label="Stylized Canadian Urbex Archive map preview">
+        <div class="home-map-card">
+          <div class="home-map-topline">
+         
+          </div>
+          <div class="home-map-grid">
+            <span class="home-map-road road-a"></span>
+            <span class="home-map-road road-b"></span>
+            <span class="home-map-road road-c"></span>
+            <span class="home-map-pin pin-a"></span>
+            <span class="home-map-pin pin-b"></span>
+            <span class="home-map-pin pin-c"></span>
+            <span class="home-map-pin pin-d"></span>
+          </div>
+          <div class="home-map-footer">
+            <span class="home-map-legend">
+              <span class="home-map-legend-item">
+                <span class="home-map-legend-color road-a"></span>
+                <span></span>
+              </span>
+              <span class="home-map-legend-item">
+                <span class="home-map-legend-color pin-a"></span>
+                <span></span>
+              </span>
+            </span>
+            <a href="map.html" class="home-map-link">View Full Map</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-section home-snapshot">
+      <div class="home-section-heading">
+        <p class="home-kicker">Built for the way you search</p>
+        <h2>Straight To The Point.</h2>
+      </div>
+      <div class="home-feature-grid">
+        <article class="home-feature">
+          <span class="home-feature-index">01</span>
+          <h3>Constant Updates</h3>
+          <p>We regularly update our map with new locations and information, ensuring you have the latest data at your fingertips.</p>
+        </article>
+        <article class="home-feature">
+          <span class="home-feature-index">02</span>
+          <h3>Research Resources</h3>
+          <p>Jump into guides, document searches, area sweeps, and other tools from one quiet place.</p>
+        </article>
+        <article class="home-feature">
+          <span class="home-feature-index">03</span>
+          <h3>Community Ready</h3>
+          <p>A Discord space is planned for updates, safe discussion, and future member coordination (COMING SOON!).</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="home-section home-showcase">
+      <div class="home-showcase-panel">
+        <div>
+          <p class="home-kicker">Stay Up To Date</p>
+          <h2>Updates And News</h2>
+        </div>
+        <div class="home-update-list">
+          <article>
+            <span>News</span>
+            <p>Discord Coming Soon!</p>
+          </article>
+          <article>
+            <span>Upcoming</span>
+            <p>Major additions to the map! (many spots)</p>
+          </article>
+          <article>
+            <span>Update Changelog</span>
+            <p>5/24/2026 Release Notes</p>
+            <p>V1.5 4th Official Release</p>
+            <p>Bug fixes, home page, UI updates, map additions, and more.</p>
+          </article>
+        </div>
+      </div>
+      <div class="home-note-stack">
+        <article>
+          <h3>Access</h3>
+          <p>Role-based map access keeps sensitive editing tools away from public browsing.</p>
+        </article>
+        <article>
+          <h3>Safety</h3>
+          <p>The site is built around research and education, not encouraging risky or illegal entry.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="contact" class="home-section home-contact">
+      <div>
+        <p class="home-kicker">Contact</p>
+        <h2>Questions, corrections, or access requests?</h2>
+        <p>Reach out for map updates, resource corrections, community information, or account help.</p>
+      </div>
+      <div class="home-contact-actions">
+        <a href="mailto:liamnova9@gmail.com">liamnova9@gmail.com</a>
+        <a href="#" aria-disabled="true">Discord (Coming Soon)</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="home-footer">
+    <div class="home-legal">
+      <h2>Legal Disclaimer</h2>
+      <p>Canadian Urbex Archive does not encourage, promote, or condone trespassing or illegal activity. The information shared on this website is for entertainment, historical, and educational purposes only. Exploring abandoned places can be dangerous and may involve legal risks.</p>
+      <p>By using this website, you agree that Canadian Urbex Archive and its team are not responsible for any injuries, damages, arrests, or legal consequences that may result from exploring locations listed here.</p>
+      <h2>Contact</h2>
+      <p><a href="mailto:liamnova9@gmail.com">liamnova9@gmail.com</a></p>
+      <p><a href="https://discord.com/users/1019757114752765992" target="_blank" rel="noopener noreferrer">Discord (@jollyintegral)</a></p>
+      <p class="home-license-link-wrap"><a href="#" id="homeLicenseLink">Full License Here</a></p>
+      <p class="home-copyright">© 2026 Canadian Urbex Archive. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <div id="homeLicenseModal" class="settings-modal" style="display:none;">
+    <div class="settings-modal-backdrop home-license-backdrop"></div>
+    <div class="settings-modal-content privacy-policy-modal-content home-license-modal-content">
+      <div class="settings-modal-header">
+        <h2>Full License</h2>
+        <button class="settings-modal-close home-license-close" type="button" aria-label="Close full license">x</button>
+      </div>
+      <div class="settings-modal-body privacy-policy-body home-license-body">
+        <section class="privacy-policy-section">
+          <h3>All Rights Reserved</h3>
+          <p>© 2026 Canadian Urbex Archive. All rights reserved.</p>
+        </section>
+        <section class="privacy-policy-section">
+          <p>This project, including but not limited to:</p>
+          <p>- source code<br>- branding<br>- logos<br>- graphics<br>- images<br>- map data organization<br>- written content<br>- UI/UX design<br>- documentation</p>
+          <p>may not be copied, reproduced, modified, redistributed, republished, or used in any form without explicit written permission from the owners of Canadian Urbex Archive.</p>
+          <p>Unauthorized use, impersonation, or redistribution of any part of this project may result in legal action.</p>
+          <p>Canadian Urbex Archive is an independent project and all associated branding and original materials are protected under applicable copyright laws.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="home-auth.js"></script>
+  <script>
+    const toggle = document.querySelector('.mobile-menu-button');
+    const header = document.querySelector('header');
+    const closeButton = document.querySelector('.drawer-close-button');
+    const homeLicenseModal = document.getElementById('homeLicenseModal');
+    const homeLicenseLink = document.getElementById('homeLicenseLink');
+    const closeHomeLicenseModalBtn = document.querySelector('.home-license-close');
+    const homeLicenseBackdrop = document.querySelector('.home-license-backdrop');
+
+    if (toggle && header) {
+      toggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const open = header.classList.toggle('mobile-menu-open');
+        toggle.classList.toggle('is-active', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+
+    if (closeButton && header && toggle) {
+      closeButton.addEventListener('click', () => {
+        header.classList.remove('mobile-menu-open');
+        toggle.classList.remove('is-active');
+        toggle.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      if (header && toggle && header.classList.contains('mobile-menu-open') && !header.contains(event.target)) {
+        header.classList.remove('mobile-menu-open');
+        toggle.classList.remove('is-active');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    const closeHomeLicenseModal = () => {
+      if (!homeLicenseModal) return;
+      homeLicenseModal.classList.add('is-closing');
+      setTimeout(() => {
+        homeLicenseModal.style.display = 'none';
+        homeLicenseModal.classList.remove('is-closing');
+        document.body.style.overflow = '';
+      }, 250);
+    };
+
+    if (homeLicenseLink && homeLicenseModal) {
+      homeLicenseLink.addEventListener('click', (event) => {
+        event.preventDefault();
+        homeLicenseModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+      });
+    }
+
+    if (closeHomeLicenseModalBtn) closeHomeLicenseModalBtn.addEventListener('click', closeHomeLicenseModal);
+    if (homeLicenseBackdrop) homeLicenseBackdrop.addEventListener('click', closeHomeLicenseModal);
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && homeLicenseModal && homeLicenseModal.style.display === 'flex') {
+        closeHomeLicenseModal();
+      }
+    });
+  </script>
+</body>
+</html>
