@@ -1221,10 +1221,44 @@ function runMapApp() {
   });
 }
 
+function compressImage(file, maxBytes) {
+  return new Promise((resolve) => {
+    if (file.size <= maxBytes || !file.type.startsWith('image/')) { resolve(file); return; }
+    const img = new Image();
+    img.onload = () => {
+      const MAX_DIM = 1920;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width > height) { height *= MAX_DIM / width; width = MAX_DIM; }
+        else { width *= MAX_DIM / height; height = MAX_DIM; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      let quality = 0.85;
+      const tryCompress = () => {
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          if (blob.size <= maxBytes || quality <= 0.2) { resolve(blob); return; }
+          quality -= 0.1;
+          tryCompress();
+        }, 'image/jpeg', quality);
+      };
+      tryCompress();
+    };
+    img.onerror = () => resolve(file);
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    img.onload = () => { URL.revokeObjectURL(url); img.onload(); };
+  });
+}
+
 async function uploadSpotImage(spotId, file) {
+  const compressed = await compressImage(file, 512000);
   const ext = (file.name.split('.').pop()) || 'jpg';
   const safeName = `${spotId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-  const { error } = await supabase.storage.from('spot-images').upload(safeName, file, { upsert: true });
+  const { error } = await supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true });
   if (error) throw error;
   const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
   return { publicUrl, path: safeName };
@@ -1612,9 +1646,10 @@ function addDescToolbar(el, spotImageInput, spotId) {
       const btn = bar.querySelectorAll('button')[3];
       btn.classList.add('is-uploading');
       btn.disabled = true;
+      const compressed = await compressImage(file, 512000);
       const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const ext = (file.name.split('.').pop()) || 'jpg';      const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('spot-images').upload(safeName, file, { upsert: true });
+      const { error } = await supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true });
       imgInput.remove();
       btn.classList.remove('is-uploading');
       btn.disabled = false;

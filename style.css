@@ -103,9 +103,12 @@ header .top-nav-link {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
-    padding: 8px !important;
+    padding: 4px !important;
     margin: 0 !important;
     box-sizing: border-box !important;
+  }
+  .spot-popup-view .spot-popup-body {
+    padding: 8px 10px 10px !important;
   }
   .leaflet-popup-content {
     width: 100% !important;
@@ -116,11 +119,16 @@ header .top-nav-link {
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
+  .leaflet-container a.leaflet-popup-close-button {
+    font-size: 20px !important;
+    padding: 4px 6px 0 0 !important;
+  }
   .spot-popup-view .spot-name-row {
     display: flex !important;
     align-items: center !important;
     gap: 6px !important;
     width: 100% !important;
+    padding-right: 26px !important;
   }
   .spot-popup-view .spot-name-row .spot-popup-name {
     flex: 1 1 auto !important;
@@ -1340,12 +1348,21 @@ body.is-page-loading-exit::before {
 
 /* ── Mobile ── */
 @media (max-width: 700px) {
-  #ctrl-panel { right: 10px; gap: 8px; }
+  #ctrl-panel { right: 10px; gap: 6px; }
   .coord-search-input-row { min-width: 180px; max-width: calc(100vw - 96px); }
   .locate-icon-desktop { display: none; }
   .locate-icon-mobile  { display: block; width: 24px; height: 24px; }
   .locate-btn--active { background: rgba(36, 58, 130, 0.78) !important; border-color: rgba(143, 163, 255, 0.55) !important; }
   .locate-btn--error  { background: rgba(80, 22, 38, 0.78)  !important; border-color: rgba(231, 100, 130, 0.52) !important; }
+  .ctrl-btn,
+  .coord-search-pill,
+  .locate-btn,
+  .leaflet-control-layers-toggle {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .add-spot-icon { width: 26px; height: 30px; }
+  .locate-icon-mobile { width: 22px; height: 22px; }
 }
 
 /* Unified Blue Theme (Site-wide) */
@@ -3262,6 +3279,15 @@ header {
 
 /* Mobile responsive */
 @media (max-width: 700px) {
+  .settings-control-btn {
+    width: 44px !important;
+    height: 44px !important;
+    margin: 0 8px 8px 0 !important;
+  }
+  .settings-control-icon {
+    width: 20px;
+    height: 20px;
+  }
   .settings-modal-content {
     max-width: 90vw;
     max-height: 90vh;
@@ -3792,10 +3818,6 @@ header {
   .home-page main {
     max-width: 100%;
     overflow-x: hidden;
-  }
-
-  .home-header-cta {
-    display: none;
   }
 
   .home-hero,
