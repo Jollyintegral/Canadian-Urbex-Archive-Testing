@@ -19,7 +19,7 @@ let guestMode = sessionStorage.getItem('guestMode') === '1';
 function closeAccountDropdown() {
   const dropdown = document.getElementById('accountDropdown');
   const btn = document.getElementById('accountMenuBtn');
-  if (dropdown) dropdown.style.display = 'none';
+  if (dropdown) dropdown.classList.remove('is-visible');
   if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
@@ -53,8 +53,8 @@ function wireHeaderActions() {
   if (menuBtn && dropdown) {
     menuBtn.onclick = (e) => {
       e.stopPropagation();
-      const open = dropdown.style.display !== 'none';
-      dropdown.style.display = open ? 'none' : 'block';
+      const open = dropdown.classList.contains('is-visible');
+      dropdown.classList.toggle('is-visible');
       menuBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
     };
   }
@@ -64,6 +64,7 @@ function wireHeaderActions() {
     window.location.href = 'settings.html';
   };
   if (signOutBtn) signOutBtn.onclick = async () => {
+    if (window.UrbexLoader) window.UrbexLoader.start();
     closeAccountDropdown();
     guestMode = false;
     sessionStorage.removeItem('guestMode');
@@ -119,18 +120,24 @@ wireMobileMenu();
 function wireResourceDropdownAnimations() {
   const items = Array.from(document.querySelectorAll('details.resource-item'));
   items.forEach((details) => {
-    details.addEventListener('toggle', () => {
-      details.classList.remove('is-opening', 'is-closing');
+    const summary = details.querySelector('summary');
+    if (!summary) return;
+    summary.addEventListener('click', (e) => {
+      e.preventDefault();
       if (details.open) {
+        details.classList.remove('is-open');
+        details.classList.add('is-closing');
+        window.setTimeout(() => {
+          details.removeAttribute('open');
+          details.classList.remove('is-closing');
+        }, 260);
+      } else {
+        details.setAttribute('open', '');
         details.classList.add('is-opening');
         window.setTimeout(() => {
           details.classList.remove('is-opening');
           details.classList.add('is-open');
         }, 220);
-      } else {
-        details.classList.remove('is-open');
-        details.classList.add('is-closing');
-        window.setTimeout(() => details.classList.remove('is-closing'), 260);
       }
     });
   });

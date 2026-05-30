@@ -79,19 +79,19 @@ function wireMenu() {
   if (btn && dropdown) {
     btn.onclick = (e) => {
       e.stopPropagation();
-      const open = dropdown.style.display !== 'none';
-      dropdown.style.display = open ? 'none' : 'block';
+      const open = dropdown.classList.contains('is-visible');
+      dropdown.classList.toggle('is-visible');
       btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     };
     document.addEventListener('click', () => {
-      dropdown.style.display = 'none';
+      dropdown.classList.remove('is-visible');
       btn.setAttribute('aria-expanded', 'false');
     });
   }
   if (signOutBtn) signOutBtn.onclick = async () => {
-    await signOut(auth);
     if (window.UrbexLoader) window.UrbexLoader.start();
-    window.location.href = 'map.html';
+    await signOut(auth);
+    window.location.reload();
   };
 }
 
@@ -358,23 +358,7 @@ async function loadRoleDashboard() {
     </tr>`;
   }).join('');
 
-  if (cardsEl) {
-    cardsEl.innerHTML = users.map((u) => {
-      const current = normalizeRole(u.role || 'visitor');
-      const lockedOwner = current === 'owner' && currentRole !== 'owner';
-      const disabledAttr = lockedOwner ? 'disabled' : '';
-      const label = u.email || u.displayName || u.uid;
-      return `<article class="settings-role-card" data-uid="${u.uid}">
-        <div class="settings-role-card-head">
-          <strong>${label}</strong>
-          <span class="settings-role-card-current">${roleLabel(current)}</span>
-        </div>
-        <label class="settings-role-card-label">Set role</label>
-        <select class="settings-role-select" ${disabledAttr}>${buildRoleSelectOptions(current)}</select>
-        <button type="button" class="settings-role-save-btn" ${disabledAttr}>Save</button>
-      </article>`;
-    }).join('');
-  }
+
 
   wireRoleSaveButtons(users);
 

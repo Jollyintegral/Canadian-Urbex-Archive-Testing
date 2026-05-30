@@ -3,7 +3,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { 
   getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, getDoc, setDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -25,8 +25,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
 const auth = getAuth(app);
+const supabase = createClient('https://xdomzbdjhghvmbrocjwv.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhkb216YmRqaGdodm1icm9jand2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMTIyODQsImV4cCI6MjA5NTU4ODI4NH0.lK6ZtBJqsGx7HYR7xCVmWbLX_IVE1hlrTT-Cz2OBVB4');
 const googleProvider = new GoogleAuthProvider();
 const SPOTS_COLLECTION = 'spots';
 const ROLE_RANK = { visitor: 0, member: 1, editor: 2, admin: 3, owner: 4 };
@@ -436,6 +436,7 @@ function renderSpotData(spotId, d) {
   m._spotName = spotName;
   m._spotDesc = d.description || '';
   m._spotImageUrl = d.imageUrl || '';
+  m._spotImages = d.images || [];
   m._spotMinRole = minRole;
   m.bindPopup('<div class="spot-popup-loading">Loading...</div>', { minWidth: 220 });
   m.on('popupopen', () => {
@@ -445,6 +446,7 @@ function renderSpotData(spotId, d) {
       name: m._spotName || 'Unnamed spot',
       desc: m._spotDesc || '',
       imageUrl: m._spotImageUrl || '',
+      images: m._spotImages || [],
       spotClass: m._spotClass || 'default',
       minRole: m._spotMinRole || 'visitor',
       comments: m._spotComments || [],
@@ -563,7 +565,7 @@ function updateAccountMenuUi(user, role) {
 function closeAccountDropdown() {
   const dropdown = document.getElementById('accountDropdown');
   const btn = document.getElementById('accountMenuBtn');
-  if (dropdown) dropdown.style.display = 'none';
+  if (dropdown) dropdown.classList.remove('is-visible');
   if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
@@ -571,8 +573,8 @@ function toggleAccountDropdown() {
   const dropdown = document.getElementById('accountDropdown');
   const btn = document.getElementById('accountMenuBtn');
   if (!dropdown || !btn) return;
-  const open = dropdown.style.display !== 'none';
-  dropdown.style.display = open ? 'none' : 'block';
+  const open = dropdown.classList.contains('is-visible');
+  dropdown.classList.toggle('is-visible');
   btn.setAttribute('aria-expanded', open ? 'false' : 'true');
 }
 
@@ -587,11 +589,13 @@ function wireAccountMenu() {
     window.location.href = 'settings.html';
   };
   if (signOutBtn) signOutBtn.onclick = async () => {
+    if (window.UrbexLoader) window.UrbexLoader.start();
     closeAccountDropdown();
     addMode = false;
     const addSpotBtn = document.getElementById('addSpotBtn');
     if (addSpotBtn) addSpotBtn.style.display = 'none';
     await signOut(auth);
+    window.location.reload();
   };
   document.addEventListener('click', () => closeAccountDropdown());
 }
@@ -724,6 +728,7 @@ function initAuthGate() {
       else {
         clearRenderedSpots();
         loadSpots();
+        refreshAddSpotControl();
       }
     } catch (error) {
       userRole = 'visitor';
@@ -774,61 +779,74 @@ function addLocationControl() {
       </svg>
     `;
 
-    let locating = false;
+    let watching = false;
+    let watchId = null;
     let locationMarker = null;
     let locationCircle = null;
+    let lastUpdateTime = 0;
+    const THROTTLE_MS = 2000;
 
     L.DomEvent.disableClickPropagation(btn);
     L.DomEvent.on(btn, 'click', () => {
-      if (locating) return;
       if (!navigator.geolocation) {
         btn.classList.add('locate-btn--error');
         setTimeout(() => btn.classList.remove('locate-btn--error'), 1800);
         return;
       }
-      locating = true;
-      btn.classList.add('locate-btn--locating');
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          locating = false;
-          btn.classList.remove('locate-btn--locating');
-          btn.classList.add('locate-btn--active');
-          setTimeout(() => btn.classList.remove('locate-btn--active'), 2200);
+      if (watching) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        watching = false;
+        btn.classList.remove('locate-btn--tracking');
+        if (locationMarker) { locationMarker.remove(); locationMarker = null; }
+        if (locationCircle) { locationCircle.remove(); locationCircle = null; }
+        return;
+      }
 
-          const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      watching = true;
+      btn.classList.add('locate-btn--tracking');
 
-          // Remove old markers
-          if (locationMarker) { locationMarker.remove(); locationMarker = null; }
-          if (locationCircle) { locationCircle.remove(); locationCircle = null; }
+      function updateLocation(pos) {
+        const now = Date.now();
+        if (now - lastUpdateTime < THROTTLE_MS) return;
+        lastUpdateTime = now;
 
-          // Accuracy ring
-          locationCircle = L.circle([lat, lng], {
-            radius: accuracy,
-            color: '#8fa3ff',
-            fillColor: '#8fa3ff',
-            fillOpacity: 0.12,
-            weight: 1.5
-          }).addTo(map);
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
 
-          // Location dot marker
-          const dotSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
-            <circle cx="10" cy="10" r="7" fill="#8fa3ff" stroke="#fff" stroke-width="2.5"/>
-            <circle cx="10" cy="10" r="3" fill="#fff"/>
-          </svg>`;
-          const dotIcon = L.divIcon({
-            className: '',
-            html: dotSvg,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-          });
-          locationMarker = L.marker([lat, lng], { icon: dotIcon, interactive: false }).addTo(map);
+        if (locationMarker) { locationMarker.remove(); locationMarker = null; }
+        if (locationCircle) { locationCircle.remove(); locationCircle = null; }
 
-          map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 1 });
-        },
+        locationCircle = L.circle([lat, lng], {
+          radius: accuracy,
+          color: '#8fa3ff',
+          fillColor: '#8fa3ff',
+          fillOpacity: 0.12,
+          weight: 1.5
+        }).addTo(map);
+
+        const dotSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
+          <circle cx="10" cy="10" r="7" fill="#8fa3ff" stroke="#fff" stroke-width="2.5"/>
+          <circle cx="10" cy="10" r="3" fill="#fff"/>
+        </svg>`;
+        const dotIcon = L.divIcon({
+          className: '',
+          html: dotSvg,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        locationMarker = L.marker([lat, lng], { icon: dotIcon, interactive: false }).addTo(map);
+
+        map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 1 });
+      }
+
+      watchId = navigator.geolocation.watchPosition(
+        updateLocation,
         (err) => {
-          locating = false;
-          btn.classList.remove('locate-btn--locating');
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+          watching = false;
+          btn.classList.remove('locate-btn--tracking');
           btn.classList.add('locate-btn--error');
           setTimeout(() => btn.classList.remove('locate-btn--error'), 1800);
           console.warn('Geolocation error:', err.message);
@@ -992,32 +1010,48 @@ function addSettingsControl() {
   }
 }
 
+function refreshAddSpotControl() {
+  const btn = document.getElementById('addSpotBtn');
+  if (!btn) return;
+  if (canEditSpots()) {
+    btn.style.display = 'flex';
+    const panel = document.getElementById('ctrl-panel');
+    if (panel && btn.parentNode !== panel) panel.appendChild(btn);
+    btn.onclick = () => { addMode = true; alert('Click on the map to add a spot'); };
+  } else {
+    btn.style.display = 'none';
+    addMode = false;
+  }
+}
+
 function runMapApp() {
   if (!window.L) throw new Error('Leaflet failed to load. Check internet or blocked unpkg.com');
 
   // Create the map
   map = L.map('map', { zoomControl: false, attributionControl: false }).setView([53.5444, -113.4909], 12);
 
-  // Street
+   // Street
   const street = L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     { attribution: 'Â© OpenStreetMap contributors' }
   );
 
-  // Satellite (MapTiler)
+  // Satellite
   const satellite = L.tileLayer(
-    'https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=8KenpDlA9mUgjA1xAdxk',
-    { attribution: 'Â© MapTiler' }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Tiles Â© Esri' }
   );
 
-  // Hybrid - MapTiler hybrid-v4 (satellite + roads combined)
-  const hybrid = L.tileLayer(
-    'https://api.maptiler.com/maps/hybrid-v4/{z}/{x}/{y}.png?key=8KenpDlA9mUgjA1xAdxk',
-    { attribution: 'Â© MapTiler' }
+  // Roads overlay
+  const roads = L.tileLayer(
+    'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Roads © Esri', opacity: 0.8 }
   );
+  // Hybrid = satellite + major roads (cleaner labels)
+  const hybrid = L.layerGroup([satellite, roads]);
 
   // Default view
-  hybrid.addTo(map);
+  satellite.addTo(map);
   if (typeof L.markerClusterGroup === 'function') {
     spotClusterGroup = L.markerClusterGroup({
       showCoverageOnHover: false,
@@ -1047,13 +1081,12 @@ function runMapApp() {
 
   // Add spot Leaflet control (editor+ only)
   if (canEditSpots()) {
+    const addSpotEl = document.getElementById('addSpotBtn');
+    addSpotEl.style.display = 'flex';
     const addSpotControl = L.control({ position: 'topright' });
     addSpotControl.onAdd = function () {
-      const el = document.getElementById('addSpotBtn');
-      el.style.display = 'flex';
-      L.DomEvent.disableClickPropagation(el);
-      el.onclick = () => { addMode = true; alert('Click on the map to add a spot'); };
-      return el;
+      L.DomEvent.disableClickPropagation(addSpotEl);
+      return addSpotEl;
     };
     addSpotControl.addTo(map);
   } else {
@@ -1079,6 +1112,8 @@ function runMapApp() {
     if (layersEl && layersEl.parentNode) {
       layersEl.parentNode.removeChild(layersEl);
       panel.appendChild(layersEl);
+      const layersToggle = layersEl.querySelector('.leaflet-control-layers-toggle');
+      if (layersToggle) { layersToggle.draggable = false; layersToggle.addEventListener('dragstart', e => e.preventDefault()); }
     }
     if (locateEl && locateEl.parentNode) {
       locateEl.parentNode.removeChild(locateEl);
@@ -1156,10 +1191,10 @@ function runMapApp() {
       const spotClass = normalizeSpotClass(wrap.querySelector('#spotClass').value);
       const minRole = normalizeVisibilityRole(wrap.querySelector('#spotMinRole').value);
       try {
-        const ref = await addDoc(collection(db, SPOTS_COLLECTION), { lat: pos.lat, lng: pos.lng, name, description: desc, spotClass, minRole, comments: [], createdAt: serverTimestamp() });
+        const ref = await addDoc(collection(db, SPOTS_COLLECTION), { lat: pos.lat, lng: pos.lng, name, description: desc, spotClass, minRole, images: [], comments: [], createdAt: serverTimestamp() });
         let imageUrl = '';
         if (fileInput.files[0]) {
-          imageUrl = await uploadSpotImage(ref.id, fileInput.files[0]);
+          imageUrl = (await uploadSpotImage(ref.id, fileInput.files[0])).publicUrl;
           await updateDoc(doc(db, SPOTS_COLLECTION, ref.id), { imageUrl });
         }
         newMarker._spotId = ref.id;
@@ -1168,10 +1203,11 @@ function runMapApp() {
         newMarker._spotName = name;
         newMarker._spotDesc = desc;
         newMarker._spotImageUrl = imageUrl;
+        newMarker._spotImages = [];
         newMarker._spotMinRole = minRole;
         newMarker.dragging.disable();
         newMarker.setIcon(getSpotIcon(spotClass));
-        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
+        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images: [], spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
         clearSpotsCache();
         upsertSpotSearchEntry(ref.id, name, newMarker);
         wrap.querySelector('#saveStatus').textContent = 'Saved!';
@@ -1186,9 +1222,17 @@ function runMapApp() {
 }
 
 async function uploadSpotImage(spotId, file) {
-  const r = ref(storage, `spots/${spotId}/image`);
-  await uploadBytes(r, file);
-  return await getDownloadURL(r);
+  const ext = (file.name.split('.').pop()) || 'jpg';
+  const safeName = `${spotId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+  const { error } = await supabase.storage.from('spot-images').upload(safeName, file, { upsert: true });
+  if (error) throw error;
+  const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
+  return { publicUrl, path: safeName };
+}
+
+async function deleteSpotImage(path) {
+  const { error } = await supabase.storage.from('spot-images').remove([path]);
+  if (error) console.warn('Failed to delete image:', error.message);
 }
 
 function escapeHtml(text) {
@@ -1547,8 +1591,8 @@ function addViewOnlyLinkSupport(rootEl, options = {}) {
   };
 }
 
-// Toolbar: B, U, Link, Img. Img = open file picker for spot image (pass fileInput). el = contenteditable
-function addDescToolbar(el, spotImageInput) {
+// Toolbar: B, U, Link, Img. Img = upload to Supabase and insert into description. el = contenteditable
+function addDescToolbar(el, spotImageInput, spotId) {
   const bar = document.createElement('div');
   bar.className = 'spot-desc-toolbar';
   bar.innerHTML = '<button type="button" class="spot-desc-tool-btn">B</button> <button type="button" class="spot-desc-tool-btn">U</button> <button type="button" class="spot-desc-tool-btn">Link</button> <button type="button" class="spot-desc-tool-btn">Img</button>';
@@ -1556,7 +1600,51 @@ function addDescToolbar(el, spotImageInput) {
   bar.querySelectorAll('button')[0].onclick = () => { el.focus(); document.execCommand('bold'); };
   bar.querySelectorAll('button')[1].onclick = () => { el.focus(); document.execCommand('underline'); };
   bar.querySelectorAll('button')[2].onclick = () => { if (linkSupport) linkSupport.openNewLinkEditor(); };
-  bar.querySelectorAll('button')[3].onclick = () => { if (spotImageInput) spotImageInput.click(); else { const u = prompt('Image URL:'); if (u) { el.focus(); document.execCommand('insertHTML', false, '<img src="'+u+'" style="max-width:100%">'); } } };
+  bar.querySelectorAll('button')[3].onclick = () => {
+    const imgInput = document.createElement('input');
+    imgInput.type = 'file';
+    imgInput.accept = 'image/*';
+    imgInput.style.display = 'none';
+    document.body.appendChild(imgInput);
+    imgInput.addEventListener('change', async () => {
+      const file = imgInput.files[0];
+      if (!file) { imgInput.remove(); return; }
+      const btn = bar.querySelectorAll('button')[3];
+      btn.classList.add('is-uploading');
+      btn.disabled = true;
+      const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const ext = (file.name.split('.').pop()) || 'jpg';      const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const { error } = await supabase.storage.from('spot-images').upload(safeName, file, { upsert: true });
+      imgInput.remove();
+      btn.classList.remove('is-uploading');
+      btn.disabled = false;
+      if (error) { alert('Image upload failed: ' + (error.message || String(error))); return; }
+      const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
+      let attachContainer = el.parentNode.querySelector('.spot-edit-attachments');
+      if (!attachContainer) {
+        attachContainer = document.createElement('div');
+        attachContainer.className = 'spot-edit-attachments';
+        el.after(attachContainer);
+      }
+      const attachRow = document.createElement('div');
+      attachRow.className = 'spot-edit-attachment';
+      attachRow.innerHTML = '<img class="spot-edit-attach-thumb" src="' + publicUrl + '"><span class="spot-edit-attach-name">' + escapeHtml(file.name) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
+      attachRow.dataset.path = safeName;
+      attachRow.dataset.url = publicUrl;
+      attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
+        e.stopPropagation();
+        const wrap = attachRow.closest('.spot-popup-view');
+        if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
+        if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
+        attachRow.remove();
+        if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) {
+          attachContainer.remove();
+        }
+      };
+      attachContainer.appendChild(attachRow);
+    });
+    imgInput.click();
+  };
   el.before(bar);
 }
 
@@ -1586,7 +1674,7 @@ function formatCommentTime(value) {
 }
 
 
-function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minRole = 'visitor', comments = [], editMode, activePane = 'details' }) {
+function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], spotClass, minRole = 'visitor', comments = [], editMode, activePane = 'details' }) {
   const wrap = document.createElement('div');
   wrap.className = 'spot-popup-view';
   if (!editMode) {
@@ -1598,9 +1686,27 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
       ? `<a class="spot-maps-link" href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer">View on Google Maps</a>`
       : '';
     const currentComments = Array.isArray(comments) ? comments : [];
-    const imageBlockHtml = imageUrl ? `<div class="spot-popup-title-row"><img class="spot-thumb" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}"></div>` : '';
     const editButtonHtml = canEditSpots() ? '<button type="button" class="edit-spot-btn">Edit</button>' : '';
     const commentsCount = currentComments.length;
+    const urlSet = new Set();
+    if (imageUrl) urlSet.add(imageUrl);
+    if (Array.isArray(images)) images.forEach(u => { if (u) urlSet.add(u); });
+    if (desc) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = desc;
+      tempDiv.querySelectorAll('img').forEach(img => { if (img.src) urlSet.add(img.src); });
+    }
+    const allImageUrls = [...urlSet];
+    const galleryHtml = allImageUrls.length ? `<div class="spot-gallery-panel is-collapsed">
+      <div class="spot-gallery-nav">
+        ${allImageUrls.length > 1 ? '<button type="button" class="spot-gallery-nav-btn spot-gallery-prev">&#9664;</button>' : ''}
+        <span class="spot-gallery-indicator">1 / ${allImageUrls.length}</span>
+        ${allImageUrls.length > 1 ? '<button type="button" class="spot-gallery-nav-btn spot-gallery-next">&#9654;</button>' : ''}
+        <button type="button" class="spot-gallery-nav-btn spot-gallery-close">&#9660;</button>
+      </div>
+      <img class="spot-gallery-main-img" src="${escapeHtml(allImageUrls[0])}" alt="${escapeHtml(name)}">
+    </div>` : '';
+    const reopenBtnHtml = allImageUrls.length ? '<button type="button" class="spot-gallery-reopen" title="Show images">&#9650;</button>' : '';
     const detailsActiveClass = activePane === 'comments' ? '' : 'is-active';
     const commentsActiveClass = activePane === 'comments' ? 'is-active' : '';
     const commentsHtml = currentComments.length
@@ -1621,9 +1727,12 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
           </div>`;
         }).join('')
       : '<div class="spot-comment-empty">No comments yet.</div>';
-        wrap.innerHTML = `${imageBlockHtml}
-      <div class="spot-popup-body">
-        <strong class="spot-popup-name">${escapeHtml(name)}</strong>
+        wrap.innerHTML = `<div class="spot-popup-body">
+        ${galleryHtml}
+        <div class="spot-name-row">
+          <strong class="spot-popup-name">${escapeHtml(name)}</strong>
+          ${reopenBtnHtml}
+        </div>
         <div class="spot-pane spot-pane-details ${detailsActiveClass}">
           <div class="spot-desc">${desc || ''}</div>
         </div>
@@ -1651,7 +1760,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
       if (editBtn) {
         editBtn.onclick = e => {
           e.preventDefault(); e.stopPropagation();
-          marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
+          marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
           marker.getPopup().openPopup();
           marker.dragging.enable();
           marker.once('dragstart', () => marker.getPopup().closePopup());
@@ -1661,19 +1770,38 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
 
     addViewOnlyLinkSupport(wrap, {
       onEditLink: canEditSpots() ? () => {
-        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
+        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
         marker.getPopup().openPopup();
         marker.dragging.enable();
         marker.once('dragstart', () => marker.getPopup().closePopup());
       } : null
     });
 
-    const thumb = wrap.querySelector('.spot-thumb');
-    if (thumb) thumb.onclick = e => { e.stopPropagation(); showImageOverlay(imageUrl); };
+    const galleryPanel = wrap.querySelector('.spot-gallery-panel');
+    const galleryImg = wrap.querySelector('.spot-gallery-main-img');
+    const galleryPrev = wrap.querySelector('.spot-gallery-prev');
+    const galleryNext = wrap.querySelector('.spot-gallery-next');
+    const galleryClose = wrap.querySelector('.spot-gallery-close');
+    const galleryIndicator = wrap.querySelector('.spot-gallery-indicator');
+    const galleryReopen = wrap.querySelector('.spot-gallery-reopen');
+    let currentIdx = 0;
+    function updateGalleryIdx(idx) {
+      currentIdx = idx;
+      if (galleryImg) galleryImg.src = allImageUrls[idx];
+      if (galleryIndicator) galleryIndicator.textContent = (idx + 1) + ' / ' + allImageUrls.length;
+    }
+    if (galleryClose && galleryPanel) {
+      galleryClose.onclick = e => { e.stopPropagation(); galleryPanel.classList.add('is-collapsed'); if (galleryReopen) galleryReopen.classList.remove('is-hidden'); };
+    }
+    if (galleryPrev) galleryPrev.onclick = e => { e.stopPropagation(); updateGalleryIdx((currentIdx - 1 + allImageUrls.length) % allImageUrls.length); };
+    if (galleryNext) galleryNext.onclick = e => { e.stopPropagation(); updateGalleryIdx((currentIdx + 1) % allImageUrls.length); };
+    if (galleryReopen && galleryPanel) {
+      galleryReopen.onclick = e => { e.stopPropagation(); galleryPanel.classList.remove('is-collapsed'); galleryReopen.classList.add('is-hidden'); updateGalleryIdx(0); };
+    }
 
-    const tabButtons = wrap.querySelectorAll('.spot-tab-btn');
     const paneDetails = wrap.querySelector('.spot-pane-details');
     const paneComments = wrap.querySelector('.spot-pane-comments');
+    const tabButtons = wrap.querySelectorAll('.spot-tab-btn');
     tabButtons.forEach((btn) => {
       btn.onclick = () => {
         const pane = btn.getAttribute('data-pane');
@@ -1717,6 +1845,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
             name,
             desc,
             imageUrl,
+            images: marker._spotImages || [],
             spotClass,
             minRole: marker._spotMinRole || minRole,
             comments: marker._spotComments,
@@ -1733,26 +1862,27 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
       };
     }
 
-    if (isAdminRole()) {
-      wrap.querySelectorAll('.spot-comment-delete-btn').forEach((btn) => {
-        btn.onclick = async () => {
-          const index = Number(btn.getAttribute('data-comment-index'));
-          if (!Number.isInteger(index) || index < 0 || index >= currentComments.length) return;
-          const nextComments = currentComments.filter((_, i) => i !== index);
-          btn.disabled = true;
-          try {
-            await updateDoc(doc(db, SPOTS_COLLECTION, spotId), {
-              comments: nextComments,
-              updatedAt: serverTimestamp()
-            });
-            marker._spotComments = nextComments;
-            marker.getPopup().setContent(createSpotPopup({
-              marker,
-              spotId,
-              name,
-              desc,
-              imageUrl,
-              spotClass,
+  if (isAdminRole()) {
+    wrap.querySelectorAll('.spot-comment-delete-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const index = Number(btn.getAttribute('data-comment-index'));
+        if (!Number.isInteger(index) || index < 0 || index >= currentComments.length) return;
+        const nextComments = currentComments.filter((_, i) => i !== index);
+        btn.disabled = true;
+        try {
+          await updateDoc(doc(db, SPOTS_COLLECTION, spotId), {
+            comments: nextComments,
+            updatedAt: serverTimestamp()
+          });
+          marker._spotComments = nextComments;
+          marker.getPopup().setContent(createSpotPopup({
+            marker,
+            spotId,
+            name,
+            desc,
+            imageUrl,
+            images: marker._spotImages || [],
+            spotClass,
               minRole: marker._spotMinRole || minRole,
               comments: marker._spotComments,
               editMode: false,
@@ -1786,6 +1916,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
       </select>
       <input type="file" class="spot-edit-image" accept="image/*" style="display:none">
       <div class="spot-edit-desc" contenteditable>${desc || ''}</div>
+      <div class="spot-edit-attachments"></div>
       <button type="button" class="save-edit-spot-btn">Save</button>
       <button type="button" class="delete-edit-spot-btn">Delete</button>
       <p class="edit-status"></p>`;
@@ -1795,26 +1926,64 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, spotClass, minR
     const minRoleSel = wrap.querySelector('.spot-edit-min-role');
     minRoleSel.value = normalizeVisibilityRole(minRole || marker._spotMinRole || 'visitor');
     const descEl = wrap.querySelector('.spot-edit-desc');
-    addDescToolbar(descEl, wrap.querySelector('.spot-edit-image'));
+    addDescToolbar(descEl, wrap.querySelector('.spot-edit-image'), spotId);
+    const attachContainer = wrap.querySelector('.spot-edit-attachments');
+    const urlSet = new Set();
+    if (imageUrl) urlSet.add(imageUrl);
+    if (Array.isArray(images)) images.forEach(u => { if (u) urlSet.add(u); });
+    if (desc) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = desc;
+      tempDiv.querySelectorAll('img').forEach(img => { if (img.src) urlSet.add(img.src); });
+    }
+    const existingUrls = [...urlSet];
+    existingUrls.forEach(url => {
+      const pathMatch = url.match(/\/spot-images\/([^?#]+)/);
+      const path = pathMatch ? decodeURIComponent(pathMatch[1]) : null;
+      const fileName = url.split('/').pop() || 'image';
+      const row = document.createElement('div');
+      row.className = 'spot-edit-attachment';
+      row.innerHTML = '<img class="spot-edit-attach-thumb" src="' + url + '"><span class="spot-edit-attach-name">' + escapeHtml(fileName) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
+      row.dataset.url = url;
+      if (path) row.dataset.path = path;
+      row.querySelector('.spot-edit-attach-remove').onclick = e => {
+        e.stopPropagation();
+        if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
+        if (row.dataset.path) wrap._removedImagePaths.push(row.dataset.path);
+        row.remove();
+        if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) attachContainer.remove();
+      };
+      attachContainer.appendChild(row);
+    });
     wrap.querySelector('.save-edit-spot-btn').onclick = async () => {
       const newName = (wrap.querySelector('.spot-edit-name').value.trim()) || 'Unnamed spot';
       const newClass = normalizeSpotClass(classSel.value);
       const newMinRole = normalizeVisibilityRole(minRoleSel.value);
       const fileInput = wrap.querySelector('.spot-edit-image');
-      let newImageUrl = imageUrl || '';
       try {
-        if (fileInput.files[0]) newImageUrl = await uploadSpotImage(spotId, fileInput.files[0]);
-        await updateDoc(doc(db, SPOTS_COLLECTION, spotId), { lat: marker.getLatLng().lat, lng: marker.getLatLng().lng, name: newName, description: descEl.innerHTML, imageUrl: newImageUrl, spotClass: newClass, minRole: newMinRole, updatedAt: serverTimestamp() });
+        let newImageUrl = '';
+        if (fileInput.files[0]) newImageUrl = (await uploadSpotImage(spotId, fileInput.files[0])).publicUrl;
+        const attachRows = wrap.querySelectorAll('.spot-edit-attachment');
+        const remainingUrls = [];
+        attachRows.forEach(row => { const u = row.dataset.url; if (u) remainingUrls.push(u); });
+        const finalImageUrl = remainingUrls[0] || newImageUrl;
+        const finalImages = remainingUrls.slice(1);
+        let finalDesc = descEl.innerHTML.replace(/<img[^>]*>/gi, '').replace(/<p>\s*<\/p>/gi, '');
+        await updateDoc(doc(db, SPOTS_COLLECTION, spotId), { lat: marker.getLatLng().lat, lng: marker.getLatLng().lng, name: newName, description: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, updatedAt: serverTimestamp() });
+        if (wrap._removedImagePaths && wrap._removedImagePaths.length) {
+          await Promise.allSettled(wrap._removedImagePaths.map(p => supabase.storage.from('spot-images').remove([p])));
+        }
         marker.dragging.disable();
         marker._spotClass = newClass;
         marker._spotName = newName;
-        marker._spotDesc = descEl.innerHTML;
-        marker._spotImageUrl = newImageUrl;
+        marker._spotDesc = finalDesc;
+        marker._spotImageUrl = finalImageUrl;
+        marker._spotImages = finalImages;
         marker._spotMinRole = newMinRole;
         marker.setIcon(getSpotIcon(newClass));
         clearSpotsCache();
         upsertSpotSearchEntry(spotId, newName, marker);
-        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: descEl.innerHTML, imageUrl: newImageUrl, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
+        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
       } catch (err) {
         wrap.querySelector('.edit-status').textContent = 'Error: ' + (err.code || err.message || String(err));
         wrap.querySelector('.edit-status').style.color = 'red';

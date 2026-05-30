@@ -82,8 +82,23 @@
     setLoading(true);
   }
 
-  window.addEventListener('pageshow', () => {
+  (function initLoaderOnPageLoad() {
+    const navEntry = performance.getEntriesByType('navigation')[0];
+    const isFreshLoad = !navEntry || navEntry.type === 'navigate' || navEntry.type === 'reload';
+    if (isFreshLoad && sessionStorage.getItem(LOADING_KEY) !== '1') {
+      startLoading();
+      window.addEventListener('load', () => {
+        if (!isMapPage()) finishLoading(DEFAULT_MIN_MS);
+      }, { once: true });
+    }
+  })();
+
+  window.addEventListener('pageshow', (e) => {
     resetHeaderMenuState();
+    if (e.persisted) {
+      setLoading(false);
+      return;
+    }
     if (sessionStorage.getItem(LOADING_KEY) !== '1') {
       setLoading(false);
       return;

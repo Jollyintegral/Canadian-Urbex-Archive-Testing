@@ -55,12 +55,12 @@ function wireMenu() {
   if (btn && dropdown) {
     btn.onclick = (e) => {
       e.stopPropagation();
-      const open = dropdown.style.display !== 'none';
-      dropdown.style.display = open ? 'none' : 'block';
+      const open = dropdown.classList.contains('is-visible');
+      dropdown.classList.toggle('is-visible');
       btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     };
     document.addEventListener('click', () => {
-      dropdown.style.display = 'none';
+      dropdown.classList.remove('is-visible');
       btn.setAttribute('aria-expanded', 'false');
     });
   }
@@ -73,6 +73,7 @@ function wireMenu() {
   }
   
   if (signOutBtn) signOutBtn.onclick = async () => {
+    if (window.UrbexLoader) window.UrbexLoader.start();
     guestMode = false;
     sessionStorage.removeItem('guestMode');
     sessionStorage.removeItem('authSignedIn');
@@ -90,8 +91,7 @@ if (signInBtn) {
       sessionStorage.removeItem('guestMode');
       await signInWithPopup(auth, googleProvider);
       sessionStorage.setItem('authSignedIn', '1');
-      if (window.UrbexLoader) window.UrbexLoader.start();
-      window.location.href = 'map.html';
+      window.location.reload();
     } catch (error) {
       console.warn('Home sign-in failed:', error);
     }
