@@ -161,13 +161,31 @@ function wireTabs() {
       const tab = btn.getAttribute('data-tab');
 
       navButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
-      panels.forEach((panel) => {
-        panel.classList.toggle('is-active', panel.getAttribute('data-panel') === tab);
-      });
 
-      if (isMobileViewport()) {
+      const isMobile = isMobileViewport();
+
+      if (isMobile) {
+        const currentPanel = document.querySelector('.settings-tab-panel.is-active');
+        const newPanel = document.querySelector(`.settings-tab-panel[data-panel="${tab}"]`);
+
         enterMobileDrillIn();
+
+        if (currentPanel && newPanel && currentPanel !== newPanel) {
+          currentPanel.classList.remove('is-active');
+          currentPanel.classList.add('slide-out');
+          setTimeout(() => {
+            currentPanel.classList.remove('slide-out');
+            newPanel.classList.add('is-active');
+          }, 200);
+        } else {
+          panels.forEach((p) => {
+            p.classList.toggle('is-active', p.getAttribute('data-panel') === tab);
+          });
+        }
       } else {
+        panels.forEach((p) => {
+          p.classList.toggle('is-active', p.getAttribute('data-panel') === tab);
+        });
         exitMobileDrillIn();
       }
 
@@ -181,6 +199,7 @@ function wireTabs() {
   if (mobileBackBtn) {
     mobileBackBtn.addEventListener('click', () => {
       exitMobileDrillIn();
+      panels.forEach((p) => p.classList.remove('slide-out'));
     });
   }
 }
@@ -453,9 +472,14 @@ async function saveSettings() {
 function wireForm() {
   const saveBtn = document.getElementById('settingsSaveBtn');
   const backBtn = document.getElementById('settingsBackBtn');
+  const closeBtn = document.getElementById('settingsCloseBtn');
   const returnUrl = getSettingsReturnUrl();
   if (saveBtn) saveBtn.onclick = saveSettings;
   if (backBtn) backBtn.onclick = () => {
+    if (window.UrbexLoader) window.UrbexLoader.start();
+    window.location.href = returnUrl;
+  };
+  if (closeBtn) closeBtn.onclick = () => {
     if (window.UrbexLoader) window.UrbexLoader.start();
     window.location.href = returnUrl;
   };

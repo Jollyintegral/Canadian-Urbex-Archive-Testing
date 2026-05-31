@@ -40,6 +40,8 @@ let map; // Global map variable
 let spotClusterGroup;
 const spotSearchIndex = [];
 let activeLinkControlsCloser = null;
+let spotMarkers = [];
+let activeFilters = { confirmed: true, risky: true, unsure: true, default: true };
 
 function normalizeVisibilityRole(role) {
   const value = (role || '').toString().trim().toLowerCase();
@@ -157,6 +159,7 @@ function addCoordinateSearchControl() {
             <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
           </svg>
           <input type="text" class="coord-search-input" placeholder="Search places" aria-label="Search spots or coordinates" autocomplete="off" spellcheck="false">
+          <button type="button" class="coord-search-go" aria-label="Search">➔</button>
           <button type="button" class="coord-search-clear" aria-label="Clear search">✕</button>
         </div>
         <div class="coord-search-error" aria-live="polite"></div>
@@ -170,6 +173,7 @@ function addCoordinateSearchControl() {
     const error    = container.querySelector('.coord-search-error');
     const results  = container.querySelector('.coord-search-results');
     const clearBtn = container.querySelector('.coord-search-clear');
+    const goBtn    = container.querySelector('.coord-search-go');
 
     let isOpen = false;
 
@@ -249,14 +253,11 @@ function addCoordinateSearchControl() {
       if (isOpen && !container.contains(e.target)) closeSearch();
     });
 
-    // Submit on Enter
-    input.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
+    function executeSearch() {
       const query = input.value.trim();
       if (!query) { clearResults(); error.textContent = ''; return; }
 
-      const parsed = parseCoordinateInput(query);
+      const parsed = parseCoordinateQuery(query);
       if (parsed) {
         clearResults();
         error.textContent = '';
@@ -270,7 +271,16 @@ function addCoordinateSearchControl() {
       error.textContent = '';
       renderResults(matches);
       focusSpotResult(matches[0]);
+    }
+
+    // Submit on Enter
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      executeSearch();
     });
+
+    goBtn.addEventListener('click', executeSearch);
 
     // Live debounced search
     let searchDebounceTimer = null;
@@ -454,6 +464,12 @@ function renderSpotData(spotId, d) {
     }));
   });
   upsertSpotSearchEntry(spotId, spotName, m);
+  spotMarkers.push(m);
+  if (activeFilters[spotClass] === false) {
+    if (spotClusterGroup && typeof spotClusterGroup.removeLayer === 'function') {
+      spotClusterGroup.removeLayer(m);
+    }
+  }
 }
 
 async function loadSpots() {
@@ -488,6 +504,7 @@ function clearRenderedSpots() {
     });
   }
   spotSearchIndex.length = 0;
+  spotMarkers = [];
 }
 
 let addMode = false;
@@ -784,13 +801,14 @@ function addLocationControl() {
     let locationMarker = null;
     let locationCircle = null;
     let lastUpdateTime = 0;
+    let hasZoomed = false;
     const THROTTLE_MS = 2000;
 
     L.DomEvent.disableClickPropagation(btn);
     L.DomEvent.on(btn, 'click', () => {
       if (!navigator.geolocation) {
         btn.classList.add('locate-btn--error');
-        setTimeout(() => btn.classList.remove('locate-btn--error'), 1800);
+        setTimeout(() => btn.classList.remove('locate-btn--error'), 1000);
         return;
       }
 
@@ -798,14 +816,18 @@ function addLocationControl() {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
         watching = false;
-        btn.classList.remove('locate-btn--tracking');
+        hasZoomed = false;
         if (locationMarker) { locationMarker.remove(); locationMarker = null; }
         if (locationCircle) { locationCircle.remove(); locationCircle = null; }
         return;
       }
 
       watching = true;
-      btn.classList.add('locate-btn--tracking');
+
+      function flashGreen() {
+        btn.classList.add('locate-btn--tracking');
+        setTimeout(() => btn.classList.remove('locate-btn--tracking'), 1000);
+      }
 
       function updateLocation(pos) {
         const now = Date.now();
@@ -837,7 +859,11 @@ function addLocationControl() {
         });
         locationMarker = L.marker([lat, lng], { icon: dotIcon, interactive: false }).addTo(map);
 
-        map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 1 });
+        if (!hasZoomed) {
+          hasZoomed = true;
+          map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 1 });
+          flashGreen();
+        }
       }
 
       watchId = navigator.geolocation.watchPosition(
@@ -846,9 +872,9 @@ function addLocationControl() {
           navigator.geolocation.clearWatch(watchId);
           watchId = null;
           watching = false;
-          btn.classList.remove('locate-btn--tracking');
+          hasZoomed = false;
           btn.classList.add('locate-btn--error');
-          setTimeout(() => btn.classList.remove('locate-btn--error'), 1800);
+          setTimeout(() => btn.classList.remove('locate-btn--error'), 1000);
           console.warn('Geolocation error:', err.message);
         },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -868,34 +894,24 @@ function addSettingsControl() {
   const clusteringToggle = document.getElementById('clusteringToggle');
   const analyticsToggle = document.getElementById('analyticsToggle');
 
-  // Settings button in Leaflet control
-  const settingsControl = L.control({ position: 'bottomright' });
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ctrl-btn settings-control-btn';
+  btn.title = 'Settings';
+  btn.setAttribute('aria-label', 'Open settings');
+  btn.innerHTML = `
+    <svg class="settings-control-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.25"></circle>
+      <path d="M19.4 15a7.8 7.8 0 0 0 .05-5.9l1.75-1.35-2-3.45-2.18.88a7.9 7.9 0 0 0-2.52-1.46L14.2 1.4h-4.4l-.3 2.32a7.9 7.9 0 0 0-2.52 1.46L4.8 4.3l-2 3.45L4.55 9.1a7.8 7.8 0 0 0 0 5.8L2.8 16.25l2 3.45 2.18-.88a7.9 7.9 0 0 0 2.52 1.46l.3 2.32h4.4l.3-2.32a7.9 7.9 0 0 0 2.52-1.46l2.18.88 2-3.45L19.4 15Z"></path>
+    </svg>
+  `;
 
-  settingsControl.onAdd = function () {
-    const btn = L.DomUtil.create('button', 'settings-control-btn');
-    btn.innerHTML = '⚙️';
-    btn.type = 'button';
-    btn.title = 'Settings';
-    btn.setAttribute('aria-label', 'Open settings');
-    btn.innerHTML = `
-      <svg class="settings-control-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="3.25"></circle>
-        <path d="M19.4 15a7.8 7.8 0 0 0 .05-5.9l1.75-1.35-2-3.45-2.18.88a7.9 7.9 0 0 0-2.52-1.46L14.2 1.4h-4.4l-.3 2.32a7.9 7.9 0 0 0-2.52 1.46L4.8 4.3l-2 3.45L4.55 9.1a7.8 7.8 0 0 0 0 5.8L2.8 16.25l2 3.45 2.18-.88a7.9 7.9 0 0 0 2.52 1.46l.3 2.32h4.4l.3-2.32a7.9 7.9 0 0 0 2.52-1.46l2.18.88 2-3.45L19.4 15Z"></path>
-      </svg>
-    `;
+  btn.addEventListener('click', () => {
+    settingsModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  });
 
-    L.DomEvent.disableClickPropagation(btn);
-    L.DomEvent.disableScrollPropagation(btn);
-
-    btn.addEventListener('click', () => {
-      settingsModal.style.display = 'flex';
-      document.body.style.overflow = 'hidden';
-    });
-
-    return btn;
-  };
-
-  settingsControl.addTo(map);
+  window.__settingsBtn = btn;
 
   // Modal close handlers
   const closeModal = () => {
@@ -1024,6 +1040,368 @@ function refreshAddSpotControl() {
   }
 }
 
+// ── Bottom-Right Tools (Filter + Export) ──
+const bottomToolsWrap = document.createElement('div');
+bottomToolsWrap.className = 'bottom-tools-wrap';
+
+const bottomToolsBtn = document.createElement('button');
+bottomToolsBtn.type = 'button';
+bottomToolsBtn.className = 'ctrl-btn bottom-tools-btn';
+bottomToolsBtn.title = 'Tools';
+bottomToolsBtn.setAttribute('aria-label', 'Tools');
+bottomToolsBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>';
+
+const bottomToolsBubble = document.createElement('div');
+bottomToolsBubble.className = 'bottom-tools-bubble';
+bottomToolsBubble.style.display = 'none';
+
+const bubbleFilterBtn = document.createElement('button');
+bubbleFilterBtn.type = 'button';
+bubbleFilterBtn.className = 'ctrl-btn';
+bubbleFilterBtn.title = 'Filter spots';
+bubbleFilterBtn.setAttribute('aria-label', 'Filter spots');
+bubbleFilterBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/><line x1="11" y1="10" x2="15" y2="10"/></svg>';
+
+const bubbleExportBtn = document.createElement('button');
+bubbleExportBtn.type = 'button';
+bubbleExportBtn.className = 'ctrl-btn';
+bubbleExportBtn.title = 'Export data';
+bubbleExportBtn.setAttribute('aria-label', 'Export data');
+bubbleExportBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+bottomToolsBubble.appendChild(bubbleFilterBtn);
+bottomToolsBubble.appendChild(bubbleExportBtn);
+
+const bottomToolsGroup = document.createElement('div');
+bottomToolsGroup.className = 'bottom-tools-group';
+bottomToolsGroup.appendChild(bottomToolsBubble);
+bottomToolsGroup.appendChild(bottomToolsBtn);
+
+const filterPopover = document.createElement('div');
+filterPopover.className = 'ctrl-popover bottom-filter-popover';
+filterPopover.style.display = 'none';
+filterPopover.innerHTML =
+  '<div class="ctrl-popover-header">Filter by type</div>' +
+  '<label class="filter-row" data-class="confirmed"><span class="filter-swatch" style="background:#33c06d"></span><span>Confirmed</span><input type="checkbox" checked></label>' +
+  '<label class="filter-row" data-class="risky"><span class="filter-swatch" style="background:#ef4f76"></span><span>Risky</span><input type="checkbox" checked></label>' +
+  '<label class="filter-row" data-class="unsure"><span class="filter-swatch" style="background:#e7c74b"></span><span>Unsure</span><input type="checkbox" checked></label>' +
+  '<label class="filter-row" data-class="default"><span class="filter-swatch" style="background:#a78bfa"></span><span>No Class</span><input type="checkbox" checked></label>' +
+  '<button class="ctrl-popover-action filter-show-all">Show All</button>';
+
+const exportPopover = document.createElement('div');
+exportPopover.className = 'ctrl-popover bottom-export-popover';
+exportPopover.style.display = 'none';
+exportPopover.innerHTML =
+  '<div class="ctrl-popover-header">Export Data</div>' +
+  '<label class="export-row" data-key="profile"><span>Profile data</span><input type="checkbox" checked></label>' +
+  '<label class="export-row" data-key="spotName"><span>Spot names</span><input type="checkbox" checked></label>' +
+  '<label class="export-row" data-key="spotCoords"><span>Spot coordinates</span><input type="checkbox" checked></label>' +
+  '<label class="export-row" data-key="spotDesc"><span>Spot descriptions</span><input type="checkbox" checked></label>' +
+  '<div class="export-actions"><button class="ctrl-popover-action export-toggle">Select All</button><div class="export-download-wrap"><button class="ctrl-popover-action export-download">Download</button></div></div>';
+
+bottomToolsWrap.appendChild(bottomToolsGroup);
+bottomToolsWrap.appendChild(filterPopover);
+bottomToolsWrap.appendChild(exportPopover);
+document.body.appendChild(bottomToolsWrap);
+
+let bottomToolsOpen = false;
+let bottomToolsClosing = false;
+let filterPopoverOpen = false;
+let exportPopoverOpen = false;
+
+function applyFilters() {
+  const checks = filterPopover.querySelectorAll('.filter-row input[type="checkbox"]');
+  checks.forEach(cb => {
+    const row = cb.closest('.filter-row');
+    const cls = row.getAttribute('data-class');
+    activeFilters[cls] = cb.checked;
+  });
+  const allHidden = Object.values(activeFilters).every(v => v === false);
+  spotMarkers.forEach(m => {
+    const cls = m._spotClass || 'default';
+    const visible = activeFilters[cls] && !allHidden;
+    if (visible) {
+      if (!spotClusterGroup.hasLayer(m)) spotClusterGroup.addLayer(m);
+    } else {
+      if (spotClusterGroup.hasLayer(m)) spotClusterGroup.removeLayer(m);
+    }
+  });
+}
+
+function getVisibleMarkers() {
+  return spotMarkers.filter(m => spotClusterGroup && spotClusterGroup.hasLayer(m));
+}
+
+async function exportData(format = 'json') {
+  const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
+  const selected = {};
+  checks.forEach(cb => {
+    const key = cb.closest('.export-row').getAttribute('data-key');
+    selected[key] = cb.checked;
+  });
+  const anySelected = Object.values(selected).some(v => v);
+  if (!anySelected) { alert('Select at least one data field to export.'); return; }
+
+  const data = { exportedAt: new Date().toISOString(), profile: null, spots: [] };
+
+  if (selected.profile) {
+    if (currentUser && !guestMode) {
+      try {
+        const snap = await getDoc(doc(db, 'users', currentUser.uid));
+        if (snap.exists()) {
+          const u = snap.data();
+          data.profile = {
+            displayName: u.displayName || '',
+            email: u.email || '',
+            role: u.role || 'visitor',
+            bio: u.bio || '',
+            joinedAt: u.createdAt ? (u.createdAt.toDate ? u.createdAt.toDate().toISOString() : u.createdAt) : ''
+          };
+        }
+      } catch (e) {
+        data.profile = { displayName: currentUser.displayName || '', email: currentUser.email || '', role: userRole || 'visitor' };
+      }
+    } else {
+      data.profile = null;
+    }
+  }
+
+  const visibleSpots = getVisibleMarkers();
+  visibleSpots.forEach(m => {
+    const entry = {};
+    if (selected.spotName) entry.name = m._spotName || 'Unnamed spot';
+    if (selected.spotCoords) { entry.coordinates = [m.getLatLng().lat, m.getLatLng().lng]; }
+    if (selected.spotDesc) entry.description = m._spotDesc || '';
+    if (Object.keys(entry).length) data.spots.push(entry);
+  });
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+
+  if (format === 'txt') {
+    let text = `Export Date: ${dateStr}\n`;
+    if (data.profile) {
+      text += `Profile: ${data.profile.displayName || ''} (${data.profile.email || ''})\n`;
+      if (data.profile.role) text += `Role: ${data.profile.role}\n`;
+    }
+    text += `---\n`;
+    data.spots.forEach((s, i) => {
+      text += `\nSpot: ${s.name || 'Unnamed'}\n`;
+      if (s.coordinates) text += `  Coordinates: ${s.coordinates[0]}, ${s.coordinates[1]}\n`;
+      if (s.description) text += `  Description: ${s.description}\n`;
+    });
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cua-export-' + dateStr + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } else {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cua-export-' + dateStr + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  closeBottomTools();
+}
+
+function animateCloseBubble() {
+  bottomToolsClosing = true;
+  bottomToolsBubble.classList.add('bottom-tools-bubble--closing');
+  bottomToolsBubble.addEventListener('animationend', function handler() {
+    bottomToolsBubble.removeEventListener('animationend', handler);
+    bottomToolsBubble.style.display = 'none';
+    bottomToolsBubble.classList.remove('bottom-tools-bubble--closing');
+    bottomToolsClosing = false;
+  });
+}
+
+function toggleBottomToolsBubble() {
+  if (bottomToolsClosing) return;
+  bottomToolsOpen = !bottomToolsOpen;
+  if (bottomToolsOpen) {
+    bottomToolsBubble.style.display = '';
+    bottomToolsBubble.classList.remove('bottom-tools-bubble--closing');
+  } else {
+    animateCloseBubble();
+    if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
+    if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
+  }
+}
+
+function closeBottomTools() {
+  if (bottomToolsClosing) return;
+  bottomToolsOpen = false;
+  animateCloseBubble();
+  if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
+  if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
+}
+
+// Wire filter popover
+filterPopover.querySelectorAll('.filter-row input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', applyFilters);
+});
+filterPopover.querySelector('.filter-show-all').addEventListener('click', () => {
+  filterPopover.querySelectorAll('.filter-row input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+  applyFilters();
+});
+
+// Wire export popover
+const exportToggleBtn = exportPopover.querySelector('.export-toggle');
+exportToggleBtn.addEventListener('click', () => {
+  const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
+  const allChecked = Array.from(checks).every(cb => cb.checked);
+  checks.forEach(cb => { cb.checked = !allChecked; });
+  exportToggleBtn.textContent = allChecked ? 'Select All' : 'Deselect';
+});
+// Dropup for download format
+const exportDownloadWrap = exportPopover.querySelector('.export-download-wrap');
+const exportDownloadBtn = exportDownloadWrap.querySelector('.export-download');
+const exportFormatDropup = document.createElement('div');
+exportFormatDropup.className = 'export-format-dropup';
+exportFormatDropup.style.display = 'none';
+exportFormatDropup.innerHTML =
+  '<button class="export-format-option" data-format="json">Export as JSON (.json)</button>' +
+  '<button class="export-format-option" data-format="txt">Export as TXT (.txt)</button>';
+exportDownloadWrap.appendChild(exportFormatDropup);
+
+exportDownloadBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = exportFormatDropup.style.display !== 'none';
+  exportFormatDropup.style.display = isOpen ? 'none' : '';
+});
+
+exportFormatDropup.querySelectorAll('.export-format-option').forEach(opt => {
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const format = opt.getAttribute('data-format');
+    exportFormatDropup.style.display = 'none';
+    exportData(format);
+  });
+});
+
+function showPopover(popover) {
+  popover.classList.remove('popover-closing');
+  popover.style.display = '';
+}
+
+function hidePopover(popover) {
+  if (!popover || popover.style.display === 'none') return;
+  popover.classList.add('popover-closing');
+  popover.addEventListener('animationend', function handler() {
+    popover.removeEventListener('animationend', handler);
+    popover.style.display = 'none';
+    popover.classList.remove('popover-closing');
+  });
+}
+
+function positionPopoverAbove(popover, button) {
+  const wrapRect = bottomToolsWrap.getBoundingClientRect();
+  const btnRect = button.getBoundingClientRect();
+  popover.style.right = (wrapRect.right - btnRect.right) + 'px';
+}
+
+// Wire bubble buttons
+bubbleFilterBtn.addEventListener('click', () => {
+  if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
+  filterPopoverOpen = !filterPopoverOpen;
+  if (filterPopoverOpen) {
+    positionPopoverAbove(filterPopover, bubbleFilterBtn);
+    showPopover(filterPopover);
+  } else {
+    hidePopover(filterPopover);
+  }
+});
+
+bubbleExportBtn.addEventListener('click', () => {
+  if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
+  exportPopoverOpen = !exportPopoverOpen;
+  if (exportPopoverOpen) {
+    positionPopoverAbove(exportPopover, bubbleExportBtn);
+    showPopover(exportPopover);
+    const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
+    const allChecked = Array.from(checks).every(cb => cb.checked);
+    exportToggleBtn.textContent = allChecked ? 'Deselect' : 'Select All';
+  } else {
+    hidePopover(exportPopover);
+  }
+});
+
+bottomToolsBtn.addEventListener('click', toggleBottomToolsBubble);
+
+document.addEventListener('click', (e) => {
+  if (!bottomToolsWrap.contains(e.target)) {
+    if (bottomToolsOpen) closeBottomTools();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && bottomToolsOpen) closeBottomTools();
+});
+
+// ── Custom Layers Control ──
+const layersBtn = document.createElement('button');
+layersBtn.type = 'button';
+layersBtn.className = 'ctrl-btn layers-btn';
+layersBtn.title = 'Map style';
+layersBtn.setAttribute('aria-label', 'Map style');
+layersBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l10 5 10-5-10-5Z"/><path d="M4 14l10 5 10-5-10-5Z"/><path d="M4 20l10 5 10-5-10-5Z"/></svg>';
+
+const layersPopover = document.createElement('div');
+layersPopover.className = 'ctrl-popover layers-popover';
+layersPopover.style.display = 'none';
+layersPopover.innerHTML =
+  '<div class="ctrl-popover-header">Map Style</div>' +
+  '<label class="layer-row" data-layer="street"><span>🗺</span><span>Street Map</span><span class="layer-radio"></span></label>' +
+  '<label class="layer-row" data-layer="satellite"><span>🛰</span><span>Satellite</span><span class="layer-radio"></span></label>' +
+  '<label class="layer-row" data-layer="hybrid"><span>🔤</span><span>Hybrid</span><span class="layer-radio"></span></label>';
+
+let layersPopoverOpen = false;
+let currentLayerName = null;
+const layerMap = {};
+
+function toggleLayersPopover() {
+  layersPopoverOpen = !layersPopoverOpen;
+  layersPopover.style.display = layersPopoverOpen ? '' : 'none';
+  if (layersPopoverOpen) {
+    layersPopover.querySelectorAll('.layer-row').forEach(row => {
+      row.classList.toggle('is-active', row.getAttribute('data-layer') === currentLayerName);
+    });
+  }
+}
+
+function switchLayer(name) {
+  if (currentLayerName === name || !layerMap[name]) return;
+  if (map && currentLayerName && layerMap[currentLayerName]) { map.removeLayer(layerMap[currentLayerName]); }
+  if (map) { map.addLayer(layerMap[name]); }
+  currentLayerName = name;
+  layersPopover.querySelectorAll('.layer-row').forEach(row => {
+    row.classList.toggle('is-active', row.getAttribute('data-layer') === currentLayerName);
+  });
+}
+
+layersPopover.querySelectorAll('.layer-row').forEach(row => {
+  row.addEventListener('click', () => {
+    switchLayer(row.getAttribute('data-layer'));
+    toggleLayersPopover();
+  });
+});
+layersBtn.addEventListener('click', toggleLayersPopover);
+document.addEventListener('click', (e) => {
+  if (layersPopoverOpen && !layersPopover.contains(e.target) && e.target !== layersBtn && !layersBtn.contains(e.target)) {
+    layersPopoverOpen = false;
+    layersPopover.style.display = 'none';
+  }
+});
+
 function runMapApp() {
   if (!window.L) throw new Error('Leaflet failed to load. Check internet or blocked unpkg.com');
 
@@ -1065,16 +1443,12 @@ function runMapApp() {
   }
   map.addLayer(spotClusterGroup);
 
-  // Layer switcher
-  const baseMaps = {
-    "Street Map": street,
-    "Satellite": satellite,
-    "Hybrid": hybrid
-  };
+  // Layer switcher (custom)
+  layerMap.street = street;
+  layerMap.satellite = satellite;
+  layerMap.hybrid = hybrid;
+  currentLayerName = 'satellite';
 
-  L.control.layers(baseMaps, null, {
-    position: 'bottomright'
-  }).addTo(map);
   addCoordinateSearchControl();
   addLocationControl();
   addSettingsControl();
@@ -1094,36 +1468,37 @@ function runMapApp() {
   }
 
   // After all controls are added, move the main tools into one custom right-center panel
-  // so they stack perfectly and don't fight Leaflet's corner containers.
-  // Settings stays in the bottom-right corner.
   setTimeout(() => {
     const mapEl = document.getElementById('map');
 
-    // Build the panel for non-search controls
     const panel = document.createElement('div');
     panel.id = 'ctrl-panel';
 
-    // Grab each control element in desired order: layers toggle, locate, addspot
-    // Note: search bar stays at topright via Leaflet default positioning
-    const layersEl   = document.querySelector('.leaflet-control-layers');
     const locateEl   = document.querySelector('.locate-btn');
     const addSpotEl  = document.getElementById('addSpotBtn');
 
-    if (layersEl && layersEl.parentNode) {
-      layersEl.parentNode.removeChild(layersEl);
-      panel.appendChild(layersEl);
-      const layersToggle = layersEl.querySelector('.leaflet-control-layers-toggle');
-      if (layersToggle) { layersToggle.draggable = false; layersToggle.addEventListener('dragstart', e => e.preventDefault()); }
-    }
+    // Layers
+    panel.appendChild(layersBtn);
+    panel.appendChild(layersPopover);
+
+    // Locate
     if (locateEl && locateEl.parentNode) {
       locateEl.parentNode.removeChild(locateEl);
       panel.appendChild(locateEl);
     }
+
+    // Settings gear
+    if (window.__settingsBtn) {
+      const sBtn = window.__settingsBtn;
+      if (sBtn.parentNode) sBtn.parentNode.removeChild(sBtn);
+      panel.appendChild(sBtn);
+    }
+
+    // Add spot
     if (addSpotEl && addSpotEl.style.display !== 'none') {
       addSpotEl.parentNode && addSpotEl.parentNode.removeChild(addSpotEl);
       panel.appendChild(addSpotEl);
     }
-
     mapEl.appendChild(panel);
   }, 100);
 

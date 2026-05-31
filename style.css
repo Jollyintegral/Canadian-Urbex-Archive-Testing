@@ -120,15 +120,14 @@ header .top-nav-link {
     overflow-x: hidden !important;
   }
   .leaflet-container a.leaflet-popup-close-button {
-    font-size: 20px !important;
-    padding: 4px 6px 0 0 !important;
+    display: none !important;
   }
   .spot-popup-view .spot-name-row {
     display: flex !important;
     align-items: center !important;
     gap: 6px !important;
     width: 100% !important;
-    padding-right: 26px !important;
+    padding-right: 0 !important;
   }
   .spot-popup-view .spot-name-row .spot-popup-name {
     flex: 1 1 auto !important;
@@ -158,8 +157,8 @@ header .top-nav-link {
     margin: 0 !important;
   }
   .spot-popup-view .spot-gallery-panel {
-    margin-bottom: 6px !important;
-    padding-bottom: 6px !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
   }
   .spot-popup-view .spot-gallery-nav-btn {
     width: 26px !important;
@@ -1021,7 +1020,7 @@ body.is-page-loading-exit::before {
   position: fixed;
   inset: 0;
   z-index: 2147483000;
-  background: rgba(6, 12, 22, 0.58);
+  background: rgba(6, 12, 22, 0.88);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   opacity: 1;
@@ -1063,13 +1062,19 @@ body.is-page-loading-exit::before {
   -webkit-backdrop-filter: blur(0);
 }
 
+html.is-page-loading .bottom-tools-wrap,
+html.is-page-loading .leaflet-control-container,
+html.is-page-loading #ctrl-panel {
+  visibility: hidden !important;
+}
+
 @keyframes page-loader-spin {
   to { transform: rotate(360deg); }
 }
 
 #ctrl-panel {
   position: fixed;
-  right: 14px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 1000;
@@ -1087,8 +1092,7 @@ body.is-page-loading-exit::before {
 /* ── Shared button size & style ── */
 .ctrl-btn,
 .coord-search-pill,
-.locate-btn,
-.leaflet-control-layers-toggle {
+.locate-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -1112,96 +1116,12 @@ body.is-page-loading-exit::before {
 
 .ctrl-btn:hover,
 .coord-search-pill:hover,
-.locate-btn:hover,
-.leaflet-control-layers-toggle:hover {
+.locate-btn:hover {
   background: rgba(30, 54, 104, 0.96) !important;
   border-color: rgba(160, 186, 255, 0.7) !important;
   transform: scale(1.07) !important;
   color: #e8f0ff !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.52) !important;
-}
-
-/* ── Layers control wrapper — position:relative so panel flies left ── */
-.leaflet-control-layers {
-  position: relative !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  backdrop-filter: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  /* Fixed size so the panel never shifts the stack */
-  width: 52px !important;
-  height: 52px !important;
-}
-
-/* Collapsed state — show only the toggle, same as other buttons */
-.leaflet-control-layers:not(.leaflet-control-layers-expanded) .leaflet-control-layers-toggle {
-  display: flex !important;
-}
-
-/* When expanded, hide toggle and show the panel flying out to the left */
-.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
-  /* keep toggle in place as the anchor, but hide its visual */
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.leaflet-control-layers-expanded {
-  /* Reset wrapper to just be the panel itself, positioned left of the stack */
-  position: absolute !important;
-  top: 0 !important;
-  right: 62px !important; /* 52px button + 10px gap */
-  width: auto !important;
-  height: auto !important;
-  background: rgba(12, 22, 44, 0.95) !important;
-  border: 1.5px solid rgba(114, 145, 218, 0.45) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.52) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  padding: 12px 16px !important;
-  color: #c8d8ff !important;
-  white-space: nowrap !important;
-  /* Slide in from the right edge */
-  animation: layers-panel-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  transform-origin: right center;
-}
-
-@keyframes layers-panel-in {
-  from { opacity: 0; transform: translateX(12px) scale(0.94); }
-  to   { opacity: 1; transform: translateX(0)    scale(1);    }
-}
-
-.leaflet-control-layers-toggle {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cpath d='M4 8l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M4 14l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M4 20l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-  background-size: 20px 20px !important;
-}
-
-@media (-webkit-min-device-pixel-ratio: 1.5), (min-resolution: 144dpi) {
-  .leaflet-control-layers-toggle {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cpath d='M4 8l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M4 14l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M4 20l10 5 10-5-10-5Z' fill='none' stroke='%23c8d8ff' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
-    background-size: 20px 20px !important;
-  }
-}
-
-.leaflet-control-layers label {
-  color: #c8d8ff !important;
-  font-size: 13px !important;
-  font-family: inherit !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-  padding: 4px 0 !important;
-  cursor: pointer !important;
-}
-
-.leaflet-control-layers-separator {
-  border-top: 1px solid rgba(114, 145, 218, 0.28) !important;
-  margin: 7px 0 !important;
 }
 
 .leaflet-bar a { background-color: rgba(12, 22, 44, 0.88) !important; color: #c8d8ff !important; border-color: rgba(114, 145, 218, 0.45) !important; }
@@ -1279,12 +1199,14 @@ body.is-page-loading-exit::before {
 
 .coord-search-input::placeholder { color: rgba(180, 200, 240, 0.5); }
 
+.coord-search-go,
 .coord-search-clear {
   flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
   border: none; background: rgba(143, 163, 255, 0.18); color: #b8caf0;
   font-size: 12px; cursor: pointer; display: flex; align-items: center;
   justify-content: center; padding: 0; transition: background 0.15s ease;
 }
+.coord-search-go:hover,
 .coord-search-clear:hover { background: rgba(143, 163, 255, 0.32); color: #e4eeff; }
 
 .coord-search-error {
@@ -1346,6 +1268,230 @@ body.is-page-loading-exit::before {
 
 .add-spot-icon { width: 30px; height: 34px; display: block; overflow: visible; }
 
+/* ── Filter & Export buttons (ctrl-panel) ── */
+.ctrl-btn-icon { width: 26px; height: 26px; display: block; flex-shrink: 0; }
+
+/* ── Ctrl-popover (flyout left) ── */
+.ctrl-popover {
+  position: absolute;
+  right: 62px;
+  top: 0;
+  z-index: 1400;
+  background: rgba(12, 22, 44, 0.95);
+  border: 1.5px solid rgba(114, 145, 218, 0.45);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 12px 16px;
+  color: #c8d8ff;
+  min-width: 180px;
+  animation: ctrl-popover-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: right center;
+}
+
+@keyframes ctrl-popover-in {
+  from { opacity: 0; transform: translateX(10px) scale(0.94); }
+  to   { opacity: 1; transform: translateX(0)    scale(1);    }
+}
+
+.ctrl-popover-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #eaf0ff;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(114, 145, 218, 0.28);
+  letter-spacing: 0.02em;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: #d4e0ff;
+  user-select: none;
+}
+
+.filter-row:hover { color: #eaf0ff; }
+
+.filter-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.filter-row input[type="checkbox"],
+.export-row input[type="checkbox"] {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  accent-color: #8fa3ff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ctrl-popover-action {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 163, 255, 0.4);
+  background: rgba(123, 148, 214, 0.2);
+  color: #d4e0ff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: center;
+}
+
+.ctrl-popover-action:hover { background: rgba(143, 163, 255, 0.3); border-color: rgba(143, 163, 255, 0.6); color: #eaf0ff; }
+
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: #d4e0ff;
+  user-select: none;
+}
+
+.export-row:hover { color: #eaf0ff; }
+
+.export-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(114, 145, 218, 0.28);
+}
+
+.export-actions .ctrl-popover-action {
+  margin-top: 0;
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+.export-download-wrap {
+  position: relative;
+}
+
+.export-format-dropup {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: rgba(12, 22, 44, 0.96);
+  border: 1px solid rgba(114, 145, 218, 0.35);
+  border-radius: 10px;
+  overflow: hidden;
+  z-index: 10;
+  animation: dropup-in 0.12s ease-out forwards;
+  transform-origin: bottom center;
+}
+
+@keyframes dropup-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.export-format-option {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  color: #d4e0ff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.12s;
+}
+
+.export-format-option:hover {
+  background: rgba(143, 163, 255, 0.2);
+  color: #eaf0ff;
+}
+
+.export-format-option + .export-format-option {
+  border-top: 1px solid rgba(114, 145, 218, 0.15);
+}
+
+/* ── Layer rows (map style popover) ── */
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #d4e0ff;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.layer-row:hover { background: rgba(143, 163, 255, 0.12); color: #eaf0ff; }
+
+.layer-row.is-active {
+  background: rgba(143, 163, 255, 0.2);
+  color: #eaf0ff;
+  font-weight: 700;
+}
+
+.layer-row .layer-radio {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(143, 163, 255, 0.5);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+
+.layer-row.is-active .layer-radio {
+  border-color: #8fa3ff;
+}
+
+.layer-row.is-active .layer-radio::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fa3ff;
+}
+
+.layer-row span:first-child { font-size: 15px; }
+
+/* ── Ctrl-popover sections / dividers ── */
+.ctrl-popover-section {
+  padding: 0;
+}
+
+.ctrl-popover-section + .ctrl-popover-section {
+  margin-top: 0;
+}
+
+.ctrl-popover-divider {
+  height: 1px;
+  background: rgba(114, 145, 218, 0.28);
+  margin: 8px 0;
+}
+
 /* ── Mobile ── */
 @media (max-width: 700px) {
   #ctrl-panel { right: 10px; gap: 6px; }
@@ -1355,14 +1501,23 @@ body.is-page-loading-exit::before {
   .locate-btn--active { background: rgba(36, 58, 130, 0.78) !important; border-color: rgba(143, 163, 255, 0.55) !important; }
   .locate-btn--error  { background: rgba(80, 22, 38, 0.78)  !important; border-color: rgba(231, 100, 130, 0.52) !important; }
   .ctrl-btn,
+  .layers-btn,
+  .settings-control-btn,
   .coord-search-pill,
   .locate-btn,
-  .leaflet-control-layers-toggle {
+  #addSpotBtn {
     width: 44px !important;
     height: 44px !important;
   }
+  .leaflet-top.leaflet-right .leaflet-control {
+    margin-right: 0 !important;
+  }
   .add-spot-icon { width: 26px; height: 30px; }
   .locate-icon-mobile { width: 22px; height: 22px; }
+  .ctrl-btn-icon { width: 22px; height: 22px; }
+  .ctrl-popover { right: 54px; min-width: 160px; padding: 10px 14px; max-height: 70vh; overflow-y: auto; }
+  .filter-row { font-size: 12px; padding: 4px 0; }
+  .export-row { font-size: 12px; padding: 4px 0; }
 }
 
 /* Unified Blue Theme (Site-wide) */
@@ -1655,7 +1810,7 @@ header {
 
 /* Push ctrl-panel below the header on mobile */
 @media (max-width: 700px) {
-  .map-page .leaflet-top { top: 48px; }
+  .map-page .leaflet-top { top: 52px; }
 }
 
 .account-menu-wrap {
@@ -2226,7 +2381,7 @@ header {
     width: 100%;
     max-width: 100%;
     padding: 0 10px;
-    height: 48px;
+    height: 52px;
     overflow: visible;
     flex-wrap: nowrap;
     gap: 8px;
@@ -2270,48 +2425,47 @@ header {
 
   .header-center {
     position: fixed !important;
-    top: 48px;
-    left: 0;
-    width: 100%;
-    height: calc(100vh - 48px);
-    transform: none !important;
+    top: 0;
+    left: auto;
+    right: 0;
+    width: 60%;
+    height: 100vh;
+    border-radius: 24px 0 0 24px;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
     justify-content: flex-start !important;
     gap: 4px !important;
-    padding: 16px !important;
-    background: rgba(8, 14, 26, 0.97) !important;
+    padding: 28px 16px 16px !important;
+    background: linear-gradient(to right, rgba(0,0,0,0.5), rgba(8,14,26,0.97)) !important;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    opacity: 0;
-    pointer-events: none;
-    visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    z-index: 5999;
+    z-index: 7000;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
 
   header.mobile-menu-open .header-center {
-    opacity: 1;
-    pointer-events: auto;
-    visibility: visible;
+    transform: translateX(0);
   }
 
   .mobile-drawer-header {
     display: flex !important;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
     padding-bottom: 12px;
     border-bottom: 1px solid rgba(162, 179, 216, 0.22);
+    flex-shrink: 0;
   }
 
   .drawer-logo-icon {
-    width: 32px;
-    height: 32px;
+    width: 38px;
+    height: 38px;
     border-radius: 8px;
     object-fit: cover;
   }
@@ -2337,6 +2491,8 @@ header {
     white-space: normal !important;
     display: flex !important;
     align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
     width: 100% !important;
     text-decoration: none !important;
     margin: 0 !important;
@@ -2448,7 +2604,7 @@ header {
 
   .settings-actions { flex-wrap: wrap; }
   .settings-actions button { flex: 1 1 130px; }
-  #settingsBackBtn.settings-exit-btn { flex: 0 0 36px; }
+  #settingsBackBtn.settings-exit-btn { display: none; }
 
   .settings-sidebar.mobile-hidden {
     display: none;
@@ -2456,7 +2612,7 @@ header {
 
   .settings-panel-main.mobile-full {
     position: fixed;
-    top: 48px;
+    top: 52px;
     left: 0;
     right: 0;
     bottom: 0;
@@ -2467,6 +2623,33 @@ header {
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
+  }
+
+  .settings-close-btn {
+    display: flex; align-items: center; justify-content: center;
+    position: absolute; top: 16px; right: 16px;
+    width: 34px; height: 34px; padding: 0;
+    border: 1px solid rgba(166, 185, 255, 0.3);
+    border-radius: 9px; background: rgba(143, 163, 255, 0.12);
+    color: #c8d8ff; font: 700 20px/1 inherit; cursor: pointer;
+    z-index: 10;
+  }
+
+  .settings-panel-main.mobile-full .settings-tab-panel {
+    display: block;
+    opacity: 0;
+    transform: translateX(24px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+  }
+  .settings-panel-main.mobile-full .settings-tab-panel.is-active {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+  .settings-panel-main.mobile-full .settings-tab-panel.slide-out {
+    opacity: 0;
+    transform: translateX(-24px);
   }
 
   .settings-back-button {
@@ -3235,8 +3418,8 @@ header {
 
 /* Settings button in control panel */
 .settings-control-btn {
-  width: 56px !important;
-  height: 56px !important;
+  width: 52px !important;
+  height: 52px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -3251,7 +3434,6 @@ header {
   -webkit-backdrop-filter: blur(10px) !important;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
   flex-shrink: 0 !important;
-  margin: 0 12px 12px 0 !important;
 }
 
 .settings-control-icon {
@@ -3277,13 +3459,142 @@ header {
   transform: scale(0.95) !important;
 }
 
+/* ── Bottom-right tools (group + bubble + popovers) ── */
+.bottom-tools-wrap {
+  position: fixed;
+  bottom: 12px;
+  right: 10px;
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.bottom-tools-wrap > * {
+  pointer-events: auto;
+}
+
+.bottom-tools-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: rgba(12, 22, 44, 0.92);
+  border: 1.5px solid rgba(114, 145, 218, 0.45);
+  border-radius: 20px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.52);
+  padding-right: 0;
+  overflow: hidden;
+}
+
+.bottom-tools-group .ctrl-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.bottom-tools-group .ctrl-btn:hover {
+  background: rgba(30, 54, 104, 0.5) !important;
+}
+
+.bottom-tools-btn {
+  width: 56px !important;
+  height: 56px !important;
+}
+
+.bottom-tools-btn .ctrl-btn-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.bottom-tools-bubble .ctrl-btn {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.bottom-tools-bubble .ctrl-btn-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.bottom-tools-bubble {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 6px 10px;
+  animation: bubble-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  transform-origin: right center;
+}
+
+.bottom-tools-bubble::after {
+  content: '';
+  width: 1px;
+  height: 28px;
+  background: rgba(114, 145, 218, 0.35);
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateX(10px) scale(0.92); }
+  to   { opacity: 1; transform: translateX(0)    scale(1);    }
+}
+
+@keyframes bubble-out {
+  from { opacity: 1; transform: translateX(0)    scale(1);    }
+  to   { opacity: 0; transform: translateX(10px) scale(0.92); }
+}
+
+.bottom-tools-bubble--closing {
+  animation: bubble-out 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
+/* Popover drawer animations — slide up from below */
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes popover-out {
+  from { opacity: 1; transform: translateY(0);    }
+  to   { opacity: 0; transform: translateY(12px); }
+}
+
+.bottom-filter-popover,
+.bottom-export-popover {
+  animation: popover-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.bottom-filter-popover.popover-closing,
+.bottom-export-popover.popover-closing {
+  animation: popover-out 0.15s ease forwards;
+  pointer-events: none;
+}
+
+/* Filter / Export popovers from bottom tools — above the group, right-aligned */
+.bottom-filter-popover,
+.bottom-export-popover {
+  position: absolute;
+  right: 0;
+  top: auto !important;
+  bottom: calc(100% + 8px);
+  min-width: 190px;
+}
+
 /* Mobile responsive */
 @media (max-width: 700px) {
-  .settings-control-btn {
-    width: 44px !important;
-    height: 44px !important;
-    margin: 0 8px 8px 0 !important;
-  }
+  .bottom-tools-wrap { bottom: 8px; right: 10px; }
+  .bottom-tools-group { border-radius: 16px; }
+  .bottom-tools-btn { width: 48px !important; height: 48px !important; }
+  .bottom-tools-bubble { gap: 4px; padding: 4px 0 4px 8px; }
+  .bottom-tools-bubble::after { margin-right: 8px; }
+  .bottom-tools-bubble .ctrl-btn { width: 36px !important; height: 36px !important; }
+  .bottom-tools-bubble .ctrl-btn-icon { width: 18px; height: 18px; }
+  .bottom-filter-popover,
+  .bottom-export-popover { top: auto !important; bottom: calc(100% + 8px); }
   .settings-control-icon {
     width: 20px;
     height: 20px;
