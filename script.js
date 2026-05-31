@@ -1534,7 +1534,8 @@ function runMapApp() {
     newMarker._spotComments = [];
     const wrap = document.createElement('div');
     wrap.className = 'spot-popup-view spot-create-form';
-    wrap.innerHTML = `<div class="spot-create-title">New Spot</div>
+    wrap.innerHTML = `<div class="spot-popup-body is-editing">
+      <div class="spot-create-title">New Spot</div>
       <select id="spotClass" class="spot-edit-class spot-create-class">
         <option value="default">No Class</option>
         <option value="confirmed">&#9989; Confirmed</option>
@@ -1547,10 +1548,12 @@ function runMapApp() {
         <option value="editor">Editor+</option>
       </select>
       <input type="text" id="spotName" class="spot-edit-name spot-create-name" placeholder="Name">
-      <input type="file" id="spotImage" accept="image/*" style="display:none">
+      <input type="file" id="spotImage" accept="image/*" multiple style="display:none">
       <div id="spotDesc" class="spot-edit-desc spot-create-desc" contenteditable></div>
       <button type="button" id="saveSpotBtn" class="save-edit-spot-btn spot-create-save-btn">Save to cloud</button>
-      <p id="saveStatus" class="edit-status spot-create-status"></p>`;
+      <p id="saveStatus" class="edit-status spot-create-status"></p>
+    </div>
+    <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
     addDescToolbar(wrap.querySelector('#spotDesc'), wrap.querySelector('#spotImage'));
     newMarker.bindPopup(wrap, { minWidth: 240 }).openPopup();
     wrap.querySelector('#spotClass').onchange = function() {
@@ -1566,11 +1569,19 @@ function runMapApp() {
       const spotClass = normalizeSpotClass(wrap.querySelector('#spotClass').value);
       const minRole = normalizeVisibilityRole(wrap.querySelector('#spotMinRole').value);
       try {
+        const loadingOverlay = wrap.querySelector('.spot-edit-loading-overlay');
+        loadingOverlay.style.display = 'flex';
+        void loadingOverlay.offsetHeight;
         const ref = await addDoc(collection(db, SPOTS_COLLECTION), { lat: pos.lat, lng: pos.lng, name, description: desc, spotClass, minRole, images: [], comments: [], createdAt: serverTimestamp() });
-        let imageUrl = '';
-        if (fileInput.files[0]) {
-          imageUrl = (await uploadSpotImage(ref.id, fileInput.files[0])).publicUrl;
-          await updateDoc(doc(db, SPOTS_COLLECTION, ref.id), { imageUrl });
+        const imageUrls = [];
+        for (const file of fileInput.files) {
+          const result = await uploadSpotImage(ref.id, file);
+          imageUrls.push(result.publicUrl);
+        }
+        const imageUrl = imageUrls[0] || '';
+        const images = imageUrls.slice(1);
+        if (imageUrl) {
+          await updateDoc(doc(db, SPOTS_COLLECTION, ref.id), { imageUrl, images });
         }
         newMarker._spotId = ref.id;
         newMarker._spotClass = spotClass;
@@ -1578,16 +1589,17 @@ function runMapApp() {
         newMarker._spotName = name;
         newMarker._spotDesc = desc;
         newMarker._spotImageUrl = imageUrl;
-        newMarker._spotImages = [];
+        newMarker._spotImages = images;
         newMarker._spotMinRole = minRole;
         newMarker.dragging.disable();
         newMarker.setIcon(getSpotIcon(spotClass));
-        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images: [], spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
+        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images, spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
         clearSpotsCache();
         upsertSpotSearchEntry(ref.id, name, newMarker);
         wrap.querySelector('#saveStatus').textContent = 'Saved!';
         wrap.querySelector('#saveStatus').style.color = '#8ec5ff';
       } catch (err) {
+        loadingOverlay.style.display = 'none';
         wrap.querySelector('#saveStatus').textContent = 'Error: ' + (err.code || err.message || String(err));
         wrap.querySelector('#saveStatus').style.color = '#ffb6c3';
       }
@@ -2013,45 +2025,49 @@ function addDescToolbar(el, spotImageInput, spotId) {
     const imgInput = document.createElement('input');
     imgInput.type = 'file';
     imgInput.accept = 'image/*';
+    imgInput.multiple = true;
     imgInput.style.display = 'none';
     document.body.appendChild(imgInput);
     imgInput.addEventListener('change', async () => {
-      const file = imgInput.files[0];
-      if (!file) { imgInput.remove(); return; }
+      const files = imgInput.files;
+      imgInput.remove();
+      if (!files.length) return;
       const btn = bar.querySelectorAll('button')[3];
       btn.classList.add('is-uploading');
       btn.disabled = true;
-      const compressed = await compressImage(file, 512000);
-      const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const ext = (file.name.split('.').pop()) || 'jpg';      const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const { error } = await supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true });
-      imgInput.remove();
+      for (const file of files) {
+        const compressed = await compressImage(file, 512000);
+        const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const ext = (file.name.split('.').pop()) || 'jpg';
+        const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+        const { error } = await supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true });
+        if (error) { alert('Image upload failed: ' + (error.message || String(error))); continue; }
+        const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
+        let attachContainer = el.parentNode.querySelector('.spot-edit-attachments');
+        if (!attachContainer) {
+          attachContainer = document.createElement('div');
+          attachContainer.className = 'spot-edit-attachments';
+          el.after(attachContainer);
+        }
+        const attachRow = document.createElement('div');
+        attachRow.className = 'spot-edit-attachment';
+        attachRow.innerHTML = '<img class="spot-edit-attach-thumb" src="' + publicUrl + '"><span class="spot-edit-attach-name">' + escapeHtml(file.name) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
+        attachRow.dataset.path = safeName;
+        attachRow.dataset.url = publicUrl;
+        attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
+          e.stopPropagation();
+          const wrap = attachRow.closest('.spot-popup-view');
+          if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
+          if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
+          attachRow.remove();
+          if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) {
+            attachContainer.remove();
+          }
+        };
+        attachContainer.appendChild(attachRow);
+      }
       btn.classList.remove('is-uploading');
       btn.disabled = false;
-      if (error) { alert('Image upload failed: ' + (error.message || String(error))); return; }
-      const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
-      let attachContainer = el.parentNode.querySelector('.spot-edit-attachments');
-      if (!attachContainer) {
-        attachContainer = document.createElement('div');
-        attachContainer.className = 'spot-edit-attachments';
-        el.after(attachContainer);
-      }
-      const attachRow = document.createElement('div');
-      attachRow.className = 'spot-edit-attachment';
-      attachRow.innerHTML = '<img class="spot-edit-attach-thumb" src="' + publicUrl + '"><span class="spot-edit-attach-name">' + escapeHtml(file.name) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
-      attachRow.dataset.path = safeName;
-      attachRow.dataset.url = publicUrl;
-      attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
-        e.stopPropagation();
-        const wrap = attachRow.closest('.spot-popup-view');
-        if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
-        if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
-        attachRow.remove();
-        if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) {
-          attachContainer.remove();
-        }
-      };
-      attachContainer.appendChild(attachRow);
     });
     imgInput.click();
   };
@@ -2170,8 +2186,10 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       if (editBtn) {
         editBtn.onclick = e => {
           e.preventDefault(); e.stopPropagation();
-          marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
+          const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
+          marker.getPopup().setContent(editWrap);
           marker.getPopup().openPopup();
+          styleEditCloseButton(editWrap);
           marker.dragging.enable();
           marker.once('dragstart', () => marker.getPopup().closePopup());
         };
@@ -2180,8 +2198,10 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
 
     addViewOnlyLinkSupport(wrap, {
       onEditLink: canEditSpots() ? () => {
-        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true }));
+        const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
+        marker.getPopup().setContent(editWrap);
         marker.getPopup().openPopup();
+        styleEditCloseButton(editWrap);
         marker.dragging.enable();
         marker.once('dragstart', () => marker.getPopup().closePopup());
       } : null
@@ -2311,25 +2331,29 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       });
     }
   } else {
-    // Add spot class selector
-    wrap.innerHTML = `<input class="spot-edit-name" value="${escapeHtml(name)}" type="text">
-      <select class="spot-edit-class">
-        <option value="default">No Class</option>
-        <option value="confirmed">&#9989; Confirmed</option>
-        <option value="risky">&#128308; Risky</option>
-        <option value="unsure">&#128993; Unsure</option>
-      </select>
-      <select class="spot-edit-min-role">
-        <option value="visitor">Visitor+</option>
-        <option value="member">Member+</option>
-        <option value="editor">Editor+</option>
-      </select>
-      <input type="file" class="spot-edit-image" accept="image/*" style="display:none">
-      <div class="spot-edit-desc" contenteditable>${desc || ''}</div>
-      <div class="spot-edit-attachments"></div>
-      <button type="button" class="save-edit-spot-btn">Save</button>
-      <button type="button" class="delete-edit-spot-btn">Delete</button>
-      <p class="edit-status"></p>`;
+    wrap.classList.add('is-editing');
+    wrap.innerHTML =
+      `<div class="spot-popup-body is-editing">
+        <input class="spot-edit-name" value="${escapeHtml(name)}" type="text">
+        <select class="spot-edit-class">
+          <option value="default">No Class</option>
+          <option value="confirmed">&#9989; Confirmed</option>
+          <option value="risky">&#128308; Risky</option>
+          <option value="unsure">&#128993; Unsure</option>
+        </select>
+        <select class="spot-edit-min-role">
+          <option value="visitor">Visitor+</option>
+          <option value="member">Member+</option>
+          <option value="editor">Editor+</option>
+        </select>
+        <input type="file" class="spot-edit-image" accept="image/*" multiple style="display:none">
+        <div class="spot-edit-desc" contenteditable>${desc || ''}</div>
+        <div class="spot-edit-attachments"></div>
+        <button type="button" class="save-edit-spot-btn">Save</button>
+        <button type="button" class="delete-edit-spot-btn">Delete</button>
+        <p class="edit-status"></p>
+      </div>
+      <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
     // Set current class from data, with backward compatibility for older values.
     const classSel = wrap.querySelector('.spot-edit-class');
     classSel.value = normalizeSpotClass(spotClass || marker._spotClass);
@@ -2370,14 +2394,22 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       const newClass = normalizeSpotClass(classSel.value);
       const newMinRole = normalizeVisibilityRole(minRoleSel.value);
       const fileInput = wrap.querySelector('.spot-edit-image');
+      const loadingOverlay = wrap.querySelector('.spot-edit-loading-overlay');
       try {
-        let newImageUrl = '';
-        if (fileInput.files[0]) newImageUrl = (await uploadSpotImage(spotId, fileInput.files[0])).publicUrl;
+        loadingOverlay.style.display = 'flex';
+        void loadingOverlay.offsetHeight;
+        const newUploadedUrls = [];
+        if (fileInput.files.length) {
+          for (const file of fileInput.files) {
+            const result = await uploadSpotImage(spotId, file);
+            newUploadedUrls.push(result.publicUrl);
+          }
+        }
         const attachRows = wrap.querySelectorAll('.spot-edit-attachment');
         const remainingUrls = [];
         attachRows.forEach(row => { const u = row.dataset.url; if (u) remainingUrls.push(u); });
-        const finalImageUrl = remainingUrls[0] || newImageUrl;
-        const finalImages = remainingUrls.slice(1);
+        const finalImageUrl = remainingUrls[0] || newUploadedUrls[0] || '';
+        const finalImages = [...remainingUrls.slice(1), ...newUploadedUrls.slice(remainingUrls.length ? 1 : 0)];
         let finalDesc = descEl.innerHTML.replace(/<img[^>]*>/gi, '').replace(/<p>\s*<\/p>/gi, '');
         await updateDoc(doc(db, SPOTS_COLLECTION, spotId), { lat: marker.getLatLng().lat, lng: marker.getLatLng().lng, name: newName, description: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, updatedAt: serverTimestamp() });
         if (wrap._removedImagePaths && wrap._removedImagePaths.length) {
@@ -2394,7 +2426,10 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         clearSpotsCache();
         upsertSpotSearchEntry(spotId, newName, marker);
         marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
+        const wrapper = wrap.closest('.leaflet-popup-content-wrapper');
+        if (wrapper) wrapper.classList.remove('is-editing');
       } catch (err) {
+        loadingOverlay.style.display = 'none';
         wrap.querySelector('.edit-status').textContent = 'Error: ' + (err.code || err.message || String(err));
         wrap.querySelector('.edit-status').style.color = 'red';
       }
@@ -2417,6 +2452,12 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     };
   }
   return wrap;
+}
+
+function styleEditCloseButton(wrap) {
+  const popupWrapper = wrap.closest('.leaflet-popup-content-wrapper');
+  if (!popupWrapper) return;
+  popupWrapper.classList.add('is-editing');
 }
 
 wireAccountMenu();
