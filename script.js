@@ -41,6 +41,7 @@ let spotClusterGroup;
 const spotSearchIndex = [];
 let activeLinkControlsCloser = null;
 let spotMarkers = [];
+let activeSpotMarker = null;
 let activeFilters = { confirmed: true, risky: true, unsure: true, default: true };
 
 function normalizeVisibilityRole(role) {
@@ -397,10 +398,21 @@ function getSpotIcon(spotClass) {
       shadowUrl: MARKER_SHADOW_URL || undefined,
       iconSize: [28, 40],
       iconAnchor: [14, 36],
-      popupAnchor: [1, -30]
+      popupAnchor: [1, -34]
     });
   }
   return spotIconCache[normalized];
+}
+
+function reapplyMarkerScale(marker) {
+  if (marker._icon && marker.getPopup && marker.getPopup().isOpen()) {
+    marker._icon.style.transition = '';
+    marker._icon.style.width = '36px';
+    marker._icon.style.height = '52px';
+    marker._icon.style.marginLeft = '-18px';
+    marker._icon.style.marginTop = '-47px';
+    marker._icon.classList.add('spot-marker-active');
+  }
 }
 
 function cacheSpotsForSession(spots) {
@@ -449,7 +461,29 @@ function renderSpotData(spotId, d) {
   m._spotImages = d.images || [];
   m._spotMinRole = minRole;
   m.bindPopup('<div class="spot-popup-loading">Loading...</div>', { minWidth: 220 });
+  const scaleIcon = (el, on) => {
+    if (on) {
+      el.style.transition = 'width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), height 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), margin-left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), margin-top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.35s ease';
+      el.style.width = '36px'; el.style.height = '52px';
+      el.style.marginLeft = '-18px'; el.style.marginTop = '-47px';
+      el.classList.add('spot-marker-active');
+    } else {
+      el.style.transition = 'width 0.25s ease, height 0.25s ease, margin-left 0.25s ease, margin-top 0.25s ease, filter 0.25s ease';
+      el.style.width = '28px'; el.style.height = '40px';
+      el.style.marginLeft = '-14px'; el.style.marginTop = '-36px';
+      el.classList.remove('spot-marker-active');
+    }
+    const onEnd = () => { el.style.transition = ''; el.removeEventListener('transitionend', onEnd); };
+    el.addEventListener('transitionend', onEnd);
+  };
   m.on('popupopen', () => {
+    if (activeSpotMarker && activeSpotMarker._icon) {
+      scaleIcon(activeSpotMarker._icon, false);
+    }
+    if (m._icon) {
+      scaleIcon(m._icon, true);
+    }
+    activeSpotMarker = m;
     m.getPopup().setContent(createSpotPopup({
       marker: m,
       spotId: m._spotId,
@@ -462,6 +496,12 @@ function renderSpotData(spotId, d) {
       comments: m._spotComments || [],
       editMode: false
     }));
+  });
+  m.on('popupclose', () => {
+    if (m._icon) {
+      scaleIcon(m._icon, false);
+    }
+    if (activeSpotMarker === m) activeSpotMarker = null;
   });
   upsertSpotSearchEntry(spotId, spotName, m);
   spotMarkers.push(m);
@@ -1359,10 +1399,10 @@ const layersPopover = document.createElement('div');
 layersPopover.className = 'ctrl-popover layers-popover';
 layersPopover.style.display = 'none';
 layersPopover.innerHTML =
-  '<div class="ctrl-popover-header">Map Style</div>' +
-  '<label class="layer-row" data-layer="street"><span>🗺</span><span>Street Map</span><span class="layer-radio"></span></label>' +
-  '<label class="layer-row" data-layer="satellite"><span>🛰</span><span>Satellite</span><span class="layer-radio"></span></label>' +
-  '<label class="layer-row" data-layer="hybrid"><span>🔤</span><span>Hybrid</span><span class="layer-radio"></span></label>';
+  '<div class="ctrl-popover-header">Map Layers</div>' +
+  '<label class="layer-row" data-layer="street"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M1.5 5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/></svg></span><span>Street Map</span><span class="layer-radio"></span></label>' +
+  '<label class="layer-row" data-layer="satellite"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="3"/><path d="M8 2v2.5M8 11.5V14M2 8h2.5M11.5 8H14M3.7 3.7l1.7 1.7M10.6 10.6l1.7 1.7M3.7 12.3l1.7-1.7M10.6 5.4l1.7-1.7"/></svg></span><span>Satellite</span><span class="layer-radio"></span></label>' +
+  '<label class="layer-row" data-layer="hybrid"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 8.5l6.5 4 6.5-4M1.5 5.5l6.5 4 6.5-4M8 1.5L14.5 5.5 8 9.5 1.5 5.5z"/></svg></span><span>Hybrid</span><span class="layer-radio"></span></label>';
 
 let layersPopoverOpen = false;
 let currentLayerName = null;
@@ -1370,11 +1410,18 @@ const layerMap = {};
 
 function toggleLayersPopover() {
   layersPopoverOpen = !layersPopoverOpen;
-  layersPopover.style.display = layersPopoverOpen ? '' : 'none';
   if (layersPopoverOpen) {
+    layersPopover.style.display = '';
+    layersPopover.classList.remove('ctrl-popover-closing');
     layersPopover.querySelectorAll('.layer-row').forEach(row => {
       row.classList.toggle('is-active', row.getAttribute('data-layer') === currentLayerName);
     });
+  } else {
+    layersPopover.classList.add('ctrl-popover-closing');
+    layersPopover.addEventListener('animationend', () => {
+      layersPopover.style.display = 'none';
+      layersPopover.classList.remove('ctrl-popover-closing');
+    }, { once: true });
   }
 }
 
@@ -1391,7 +1438,6 @@ function switchLayer(name) {
 layersPopover.querySelectorAll('.layer-row').forEach(row => {
   row.addEventListener('click', () => {
     switchLayer(row.getAttribute('data-layer'));
-    toggleLayersPopover();
   });
 });
 layersBtn.addEventListener('click', toggleLayersPopover);
@@ -1507,7 +1553,8 @@ function runMapApp() {
     L.popup({
       minWidth: 260,
       maxWidth: 280,
-      className: 'coord-context-popup'
+      className: 'coord-context-popup',
+      closeButton: false
     })
       .setLatLng(e.latlng)
       .setContent(popupContent)
@@ -1560,6 +1607,7 @@ function runMapApp() {
       const selectedClass = normalizeSpotClass(this.value);
       newMarker._spotClass = selectedClass;
       newMarker.setIcon(getSpotIcon(selectedClass));
+      reapplyMarkerScale(newMarker);
     };
     wrap.querySelector('#saveSpotBtn').onclick = async () => {
       const name = (wrap.querySelector('#spotName').value.trim()) || 'Unnamed spot';
@@ -1593,6 +1641,7 @@ function runMapApp() {
         newMarker._spotMinRole = minRole;
         newMarker.dragging.disable();
         newMarker.setIcon(getSpotIcon(spotClass));
+        reapplyMarkerScale(newMarker);
         newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images, spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
         clearSpotsCache();
         upsertSpotSearchEntry(ref.id, name, newMarker);
@@ -1636,8 +1685,9 @@ function compressImage(file, maxBytes) {
     };
     img.onerror = () => resolve(file);
     const url = URL.createObjectURL(file);
+    const origOnload = img.onload;
     img.src = url;
-    img.onload = () => { URL.revokeObjectURL(url); img.onload(); };
+    img.onload = () => { URL.revokeObjectURL(url); origOnload(); };
   });
 }
 
@@ -1786,6 +1836,7 @@ function addEditableLinkSupport(editableEl) {
       const action = e.target.getAttribute('data-action');
       if (!action) return;
       e.preventDefault();
+      e.stopPropagation();
       if (action === 'cancel') {
         closeEditor();
         return;
@@ -2033,41 +2084,57 @@ function addDescToolbar(el, spotImageInput, spotId) {
       imgInput.remove();
       if (!files.length) return;
       const btn = bar.querySelectorAll('button')[3];
-      btn.classList.add('is-uploading');
       btn.disabled = true;
-      for (const file of files) {
-        const compressed = await compressImage(file, 512000);
-        const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        const ext = (file.name.split('.').pop()) || 'jpg';
-        const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-        const { error } = await supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true });
-        if (error) { alert('Image upload failed: ' + (error.message || String(error))); continue; }
-        const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
-        let attachContainer = el.parentNode.querySelector('.spot-edit-attachments');
-        if (!attachContainer) {
-          attachContainer = document.createElement('div');
-          attachContainer.className = 'spot-edit-attachments';
-          el.after(attachContainer);
-        }
-        const attachRow = document.createElement('div');
-        attachRow.className = 'spot-edit-attachment';
-        attachRow.innerHTML = '<img class="spot-edit-attach-thumb" src="' + publicUrl + '"><span class="spot-edit-attach-name">' + escapeHtml(file.name) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
-        attachRow.dataset.path = safeName;
-        attachRow.dataset.url = publicUrl;
-        attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
-          e.stopPropagation();
-          const wrap = attachRow.closest('.spot-popup-view');
-          if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
-          if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
-          attachRow.remove();
-          if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) {
-            attachContainer.remove();
+      const loadingOverlay = btn.closest('.spot-popup-view')?.querySelector('.spot-edit-loading-overlay');
+      if (loadingOverlay) loadingOverlay.style.display = 'flex';
+      try {
+        for (const file of files) {
+          const compressed = await Promise.race([
+            compressImage(file, 512000),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Image compression timed out')), 60000))
+          ]);
+          const tempId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+          const ext = (file.name.split('.').pop()) || 'jpg';
+          const safeName = `${spotId || tempId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+          const { error } = await Promise.race([
+            supabase.storage.from('spot-images').upload(safeName, compressed, { upsert: true }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timed out after 60s')), 60000))
+          ]);
+          if (error) { alert('Image upload failed: ' + (error.message || String(error))); continue; }
+          const { data: { publicUrl } } = supabase.storage.from('spot-images').getPublicUrl(safeName);
+          let attachContainer = el.parentNode.querySelector('.spot-edit-attachments');
+          if (!attachContainer) {
+            attachContainer = document.createElement('div');
+            attachContainer.className = 'spot-edit-attachments';
+            el.after(attachContainer);
           }
-        };
-        attachContainer.appendChild(attachRow);
+          setupAttachContainer(attachContainer);
+          const attachRow = document.createElement('div');
+          attachRow.className = 'spot-edit-attachment';
+          attachRow.innerHTML = '<img class="spot-edit-attach-thumb" src="' + publicUrl + '"><span class="spot-edit-attach-name">' + escapeHtml(file.name) + '</span><button type="button" class="spot-edit-attach-remove">✕</button>';
+          attachRow.dataset.path = safeName;
+          attachRow.dataset.url = publicUrl;
+          attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
+            e.stopPropagation();
+            const wrap = attachRow.closest('.spot-popup-view');
+            if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
+            if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
+            attachRow.remove();
+            if (attachContainer) {
+              updateAttachCount(attachContainer);
+              if (!attachContainer.querySelector('.spot-edit-attachment')) attachContainer.remove();
+            }
+          };
+          const list = attachContainer.querySelector('.spot-edit-attachments-list');
+          if (list) list.appendChild(attachRow);
+          updateAttachCount(attachContainer);
+        }
+      } catch (err) {
+        alert('Upload error: ' + (err.message || String(err)));
+      } finally {
+        if (loadingOverlay) loadingOverlay.style.display = 'none';
+        btn.disabled = false;
       }
-      btn.classList.remove('is-uploading');
-      btn.disabled = false;
     });
     imgInput.click();
   };
@@ -2079,6 +2146,41 @@ function showImageOverlay(url) {
   el.querySelector('img').src = url;
   el.style.display = 'flex';
   el.onclick = () => { el.style.display = 'none'; el.onclick = null; };
+}
+
+function setupAttachContainer(container) {
+  if (!container || container.dataset.attachSetup) return;
+  container.dataset.attachSetup = '1';
+  const existing = [...container.querySelectorAll(':scope > .spot-edit-attachment')];
+  container.innerHTML = '';
+  const summary = document.createElement('div');
+  summary.className = 'spot-edit-attachments-summary';
+  const countSpan = document.createElement('span');
+  countSpan.className = 'spot-edit-attachments-count';
+  summary.appendChild(countSpan);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'spot-edit-attachments-toggle';
+  toggle.innerHTML = '&#9660;';
+  toggle.onclick = () => {
+    const list = container.querySelector('.spot-edit-attachments-list');
+    const hide = list.classList.toggle('is-collapsed');
+    toggle.innerHTML = hide ? '&#9660;' : '&#9650;';
+  };
+  summary.appendChild(toggle);
+  container.appendChild(summary);
+  const list = document.createElement('div');
+  list.className = 'spot-edit-attachments-list is-collapsed';
+  existing.forEach(r => list.appendChild(r));
+  container.appendChild(list);
+  updateAttachCount(container);
+}
+
+function updateAttachCount(container) {
+  const countSpan = container.querySelector('.spot-edit-attachments-count');
+  if (!countSpan) return;
+  const total = container.querySelectorAll('.spot-edit-attachment').length;
+  countSpan.textContent = total + ' attachment' + (total !== 1 ? 's' : '');
 }
 
 function formatCommentTime(value) {
@@ -2189,7 +2291,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
           const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
           marker.getPopup().setContent(editWrap);
           marker.getPopup().openPopup();
-          styleEditCloseButton(editWrap);
+          styleEditCloseButton(marker);
           marker.dragging.enable();
           marker.once('dragstart', () => marker.getPopup().closePopup());
         };
@@ -2201,7 +2303,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
         marker.getPopup().setContent(editWrap);
         marker.getPopup().openPopup();
-        styleEditCloseButton(editWrap);
+        styleEditCloseButton(marker);
         marker.dragging.enable();
         marker.once('dragstart', () => marker.getPopup().closePopup());
       } : null
@@ -2385,10 +2487,14 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
         if (row.dataset.path) wrap._removedImagePaths.push(row.dataset.path);
         row.remove();
-        if (attachContainer && !attachContainer.querySelector('.spot-edit-attachment')) attachContainer.remove();
+        if (attachContainer) {
+          updateAttachCount(attachContainer);
+          if (!attachContainer.querySelector('.spot-edit-attachment')) attachContainer.remove();
+        }
       };
       attachContainer.appendChild(row);
     });
+    setupAttachContainer(attachContainer);
     wrap.querySelector('.save-edit-spot-btn').onclick = async () => {
       const newName = (wrap.querySelector('.spot-edit-name').value.trim()) || 'Unnamed spot';
       const newClass = normalizeSpotClass(classSel.value);
@@ -2423,11 +2529,15 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         marker._spotImages = finalImages;
         marker._spotMinRole = newMinRole;
         marker.setIcon(getSpotIcon(newClass));
+        reapplyMarkerScale(marker);
         clearSpotsCache();
         upsertSpotSearchEntry(spotId, newName, marker);
         marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
-        const wrapper = wrap.closest('.leaflet-popup-content-wrapper');
-        if (wrapper) wrapper.classList.remove('is-editing');
+        const pop = marker.getPopup();
+        const cb = pop._closeButton;
+        if (cb) cb.style.cssText = '';
+        const w = pop._wrapper;
+        if (w) w.classList.remove('is-editing');
       } catch (err) {
         loadingOverlay.style.display = 'none';
         wrap.querySelector('.edit-status').textContent = 'Error: ' + (err.code || err.message || String(err));
@@ -2454,10 +2564,22 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
   return wrap;
 }
 
-function styleEditCloseButton(wrap) {
-  const popupWrapper = wrap.closest('.leaflet-popup-content-wrapper');
-  if (!popupWrapper) return;
-  popupWrapper.classList.add('is-editing');
+function styleEditCloseButton(marker) {
+  const popup = marker.getPopup();
+  const closeBtn = popup._closeButton;
+  if (!closeBtn) return;
+  closeBtn.style.cssText = 'top:auto!important;bottom:28px!important;left:auto!important;right:6px!important;color:#ff4d4d!important;font-size:20px!important;font-weight:700!important;padding:0!important;border:none!important;background:none!important';
+  const wrapper = popup._wrapper;
+  if (wrapper) wrapper.classList.add('is-editing');
+  const map = popup._map;
+  if (map) {
+    map.once('popupclose', function resetCloseBtn() {
+      const cb = marker.getPopup()._closeButton;
+      if (cb) cb.style.cssText = '';
+      const w = marker.getPopup()._wrapper;
+      if (w) w.classList.remove('is-editing');
+    });
+  }
 }
 
 wireAccountMenu();

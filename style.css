@@ -127,7 +127,7 @@ header .top-nav-link {
     align-items: center !important;
     gap: 6px !important;
     width: 100% !important;
-    padding-right: 0 !important;
+    padding-right: 32px !important;
   }
   .spot-popup-view .spot-name-row .spot-popup-name {
     flex: 1 1 auto !important;
@@ -198,6 +198,9 @@ header .top-nav-link {
     overflow-wrap: break-word !important;
   }
   .spot-popup-view .spot-edit-attachments {
+    gap: 3px !important;
+  }
+  .spot-popup-view .spot-edit-attachments-list {
     gap: 4px !important;
   }
   .spot-popup-view .spot-edit-attachment {
@@ -255,11 +258,6 @@ header .top-nav-link {
   transform: none;
   top: auto;
   left: auto;
-  align-self: center; 
-}
-  transform: none;
-  top: auto;
-  right: auto;
   align-self: center;
 }
 
@@ -403,7 +401,7 @@ header .top-nav-link {
   border: 0 !important;
   border-radius: 18px !important;
   background: #1a2540 !important;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.75), 0 16px 60px rgba(0, 0, 0, 0.55) !important;
   overflow: hidden;
 }
 .leaflet-popup-content {
@@ -416,14 +414,31 @@ header .top-nav-link {
   background: #1a2540 !important;
   box-shadow: none !important;
 }
+.spot-marker-active {
+  filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.8));
+}
 .leaflet-container a.leaflet-popup-close-button {
   color: #e5eaf7;
-  font-size: 24px;
-  padding: 8px 10px 0 0;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(162, 179, 216, 0.42);
+  border-radius: 6px;
+  background: rgba(122, 145, 206, 0.18);
+  top: 13px;
+  right: 12px;
+  padding: 0;
+  line-height: 1;
+  z-index: 2;
+  text-decoration: none;
 }
 .leaflet-container a.leaflet-popup-close-button:hover {
   color: #ffffff;
+  background: rgba(142, 166, 230, 0.33);
 }
 .spot-popup-view {
   min-width: 0;
@@ -440,7 +455,7 @@ header .top-nav-link {
   align-items: center;
   gap: 8px;
   margin: 0 0 8px;
-  padding-right: 12px;
+  padding-right: 32px;
 }
 .spot-popup-view .spot-popup-name {
   display: block;
@@ -745,7 +760,7 @@ header .top-nav-link {
   color: #f4f7ff;
 }
 .spot-popup-view .spot-edit-desc {
-  min-height: 92px;
+  min-height: 56px;
   max-height: 220px;
   overflow-y: auto;
   margin: 0;
@@ -774,9 +789,42 @@ header .top-nav-link {
 }
 .spot-popup-view .spot-edit-attachments {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+.spot-popup-view .spot-edit-attachments-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #f0f4ff;
+}
+.spot-popup-view .spot-edit-attachments-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(123, 148, 214, 0.2);
+  color: #b0c4e8;
+  cursor: pointer;
+  font-size: 11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  padding: 0;
+  line-height: 1;
+}
+.spot-popup-view .spot-edit-attachments-toggle:hover {
+  background: rgba(123, 148, 214, 0.35);
+}
+.spot-popup-view .spot-edit-attachments-list {
+  display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 6px 0;
+}
+.spot-popup-view .spot-edit-attachments-list.is-collapsed {
+  display: none;
 }
 .spot-popup-view .spot-edit-attachment {
   display: inline-flex;
@@ -942,20 +990,20 @@ header .top-nav-link {
 }
 /* Edit mode: reduced padding */
 .spot-popup-view.is-editing .spot-popup-body.is-editing {
-  padding: 10px;
+  padding: 8px 8px 0 !important;
 }
 /* Edit mode: close button in bottom-right, red */
 .leaflet-popup-content-wrapper.is-editing .leaflet-popup-close-button {
   top: auto !important;
-  bottom: 6px !important;
+  bottom: 32px !important;
   left: auto !important;
   right: 6px !important;
-  color: #ff6b6b !important;
+  color: #ff4d4d !important;
   font-size: 20px !important;
   font-weight: 700 !important;
-  padding: 4px 10px !important;
-  background: rgba(200, 60, 60, 0.15) !important;
-  border-radius: 8px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -966,9 +1014,9 @@ header .top-nav-link {
   position: absolute;
   inset: 0;
   z-index: 10;
-  background: rgba(6, 12, 22, 0.92);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(6, 12, 22, 0.85);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1337,6 +1385,13 @@ html.is-page-loading #ctrl-panel {
   from { opacity: 0; transform: translateX(10px) scale(0.94); }
   to   { opacity: 1; transform: translateX(0)    scale(1);    }
 }
+@keyframes ctrl-popover-out {
+  from { opacity: 1; transform: translateX(0)    scale(1);    }
+  to   { opacity: 0; transform: translateX(10px) scale(0.94); }
+}
+.ctrl-popover-closing {
+  animation: ctrl-popover-out 0.12s ease forwards !important;
+}
 
 .ctrl-popover-header {
   font-size: 13px;
@@ -1518,7 +1573,8 @@ html.is-page-loading #ctrl-panel {
   background: #8fa3ff;
 }
 
-.layer-row span:first-child { font-size: 15px; }
+.layer-row span:first-child { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+.layer-row span:first-child svg { width: 16px; height: 16px; }
 
 /* ── Ctrl-popover sections / dividers ── */
 .ctrl-popover-section {
