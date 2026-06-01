@@ -1413,7 +1413,7 @@ html.is-page-loading #ctrl-panel {
 .ctrl-popover-header {
   font-size: 13px;
   font-weight: 700;
-  color: #eaf0ff;
+  color: #d4e0ff;
   padding-bottom: 8px;
   margin-bottom: 6px;
   border-bottom: 1px solid rgba(114, 145, 218, 0.28);
@@ -1427,11 +1427,11 @@ html.is-page-loading #ctrl-panel {
   padding: 5px 0;
   cursor: pointer;
   font-size: 13px;
-  color: #d4e0ff;
+  color: #c8d8ff;
   user-select: none;
 }
 
-.filter-row:hover { color: #eaf0ff; }
+.filter-row:hover { color: #dce8ff; }
 
 .filter-swatch {
   width: 12px;
@@ -1476,11 +1476,11 @@ html.is-page-loading #ctrl-panel {
   padding: 5px 0;
   cursor: pointer;
   font-size: 13px;
-  color: #d4e0ff;
+  color: #c8d8ff;
   user-select: none;
 }
 
-.export-row:hover { color: #eaf0ff; }
+.export-row:hover { color: #dce8ff; }
 
 .export-actions {
   display: flex;
@@ -2148,6 +2148,8 @@ header {
   overflow-x: hidden;
 }
 
+.settings-close-btn { display: none; }
+
 .settings-sidebar,
 .settings-panel-main {
   border-radius: 14px;
@@ -2735,7 +2737,7 @@ header {
     z-index: 100;
     display: block !important;
     background: radial-gradient(circle at 10% 6%, #192742 0%, #0e172b 45%, #0a111f 100%);
-    padding: 16px;
+    padding: 12px;
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
@@ -2743,12 +2745,12 @@ header {
 
   .settings-close-btn {
     display: flex; align-items: center; justify-content: center;
-    position: absolute; top: 16px; right: 16px;
+    position: fixed; top: 68px; right: 14px;
     width: 34px; height: 34px; padding: 0;
     border: 1px solid rgba(166, 185, 255, 0.3);
     border-radius: 9px; background: rgba(143, 163, 255, 0.12);
     color: #c8d8ff; font: 700 20px/1 inherit; cursor: pointer;
-    z-index: 10;
+    z-index: 110;
   }
 
   .settings-panel-main.mobile-full .settings-tab-panel {
@@ -2794,6 +2796,28 @@ header {
 
   .settings-role-cards {
     display: none;
+  }
+
+  .settings-panel-main.mobile-full .settings-panel-head h1 {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+  .settings-panel-main.mobile-full .settings-form-grid {
+    gap: 5px;
+  }
+  .settings-panel-main.mobile-full .settings-form-grid input {
+    padding: 9px 10px;
+  }
+  .settings-panel-main.mobile-full .settings-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 10px 0 6px;
+    margin-top: 14px;
+    background: radial-gradient(circle at 10% 6%, #192742 0%, #0e172b 45%, #0a111f 100%);
+  }
+  .settings-panel-main.mobile-full .settings-actions button {
+    min-height: 38px;
   }
 
   .home-header-cta { display: none; }
@@ -3616,8 +3640,8 @@ header {
 }
 
 .bottom-tools-btn {
-  width: 56px !important;
-  height: 56px !important;
+  width: 52px !important;
+  height: 52px !important;
 }
 
 .bottom-tools-btn .ctrl-btn-icon {
@@ -3697,14 +3721,14 @@ header {
   right: 0;
   top: auto !important;
   bottom: calc(100% + 8px);
-  min-width: 190px;
+  min-width: 170px;
 }
 
 /* Mobile responsive */
 @media (max-width: 700px) {
   .bottom-tools-wrap { bottom: 8px; right: 10px; }
   .bottom-tools-group { border-radius: 16px; }
-  .bottom-tools-btn { width: 48px !important; height: 48px !important; }
+  .bottom-tools-btn { width: 44px !important; height: 44px !important; }
   .bottom-tools-bubble { gap: 4px; padding: 4px 0 4px 8px; }
   .bottom-tools-bubble::after { margin-right: 8px; }
   .bottom-tools-bubble .ctrl-btn { width: 36px !important; height: 36px !important; }

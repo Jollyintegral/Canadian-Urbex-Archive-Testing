@@ -472,17 +472,18 @@ async function saveSettings() {
 function wireForm() {
   const saveBtn = document.getElementById('settingsSaveBtn');
   const backBtn = document.getElementById('settingsBackBtn');
-  const closeBtn = document.getElementById('settingsCloseBtn');
   const returnUrl = getSettingsReturnUrl();
   if (saveBtn) saveBtn.onclick = saveSettings;
   if (backBtn) backBtn.onclick = () => {
     if (window.UrbexLoader) window.UrbexLoader.start();
     window.location.href = returnUrl;
   };
-  if (closeBtn) closeBtn.onclick = () => {
-    if (window.UrbexLoader) window.UrbexLoader.start();
-    window.location.href = returnUrl;
-  };
+  document.querySelectorAll('.settings-close-btn').forEach((btn) => {
+    btn.onclick = () => {
+      if (window.UrbexLoader) window.UrbexLoader.start();
+      window.location.href = returnUrl;
+    };
+  });
 }
 
 onAuthStateChanged(auth, async (user) => {
