@@ -98,7 +98,7 @@ header .top-nav-link {
     padding: 12px;
   }
   .leaflet-popup-content-wrapper {
-    max-width: min(calc(100vw - 48px), 340px) !important;
+    max-width: min(calc(100vw - 24px), 380px) !important;
     width: auto !important;
     overflow-x: hidden !important;
   }
@@ -123,21 +123,11 @@ header .top-nav-link {
     overflow-x: hidden !important;
   }
   .leaflet-container a.leaflet-popup-close-button {
-    width: 26px !important;
-    height: 26px !important;
-    top: 13px !important;
-    right: 12px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    border: 1.5px solid rgba(143, 163, 255, 0.5) !important;
-    border-radius: 999px !important;
-    background: rgba(20, 31, 54, 0.75) !important;
-    color: #e5eaf7 !important;
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    padding: 0 !important;
-    line-height: 1 !important;
+    display: none !important;
+  }
+  .leaflet-popup-content-wrapper.is-editing {
+    max-height: 60vh !important;
+    overflow-y: auto !important;
   }
   .spot-popup-view .spot-name-row {
     display: flex !important;
@@ -1626,12 +1616,13 @@ html.is-page-loading #ctrl-panel {
     height: 44px !important;
   }
   .ctrl-btn.settings-control-btn {
-    width: 34px !important;
-    height: 34px !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 12px !important;
   }
   .settings-control-icon {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
   }
   .leaflet-top.leaflet-right .leaflet-control {
     margin-right: 0 !important;
