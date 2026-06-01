@@ -7,6 +7,9 @@ html {
 *::after {
   box-sizing: inherit;
 }
+button, a, [role="button"], input, select, textarea, [tabindex]:not([tabindex="-1"]) {
+  touch-action: manipulation;
+}
 
 html,
 body {
@@ -120,7 +123,21 @@ header .top-nav-link {
     overflow-x: hidden !important;
   }
   .leaflet-container a.leaflet-popup-close-button {
-    display: none !important;
+    width: 26px !important;
+    height: 26px !important;
+    top: 13px !important;
+    right: 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1.5px solid rgba(143, 163, 255, 0.5) !important;
+    border-radius: 999px !important;
+    background: rgba(20, 31, 54, 0.75) !important;
+    color: #e5eaf7 !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
   }
   .spot-popup-view .spot-name-row {
     display: flex !important;
@@ -186,8 +203,8 @@ header .top-nav-link {
   .spot-popup-view .save-edit-spot-btn,
   .spot-popup-view .delete-edit-spot-btn {
     font-size: 14px !important;
-    padding: 8px 12px !important;
-    min-height: 34px !important;
+    padding: 10px 14px !important;
+    min-height: 44px !important;
     border-radius: 5px !important;
   }
   .spot-popup-view .spot-edit-desc {
@@ -1614,7 +1631,7 @@ html.is-page-loading #ctrl-panel {
   .add-spot-icon { width: 26px; height: 30px; }
   .locate-icon-mobile { width: 22px; height: 22px; }
   .ctrl-btn-icon { width: 22px; height: 22px; }
-  .ctrl-popover { right: 54px; min-width: 160px; padding: 10px 14px; max-height: 70vh; overflow-y: auto; }
+  .ctrl-popover { right: 54px; min-width: 190px; padding: 10px 14px; max-height: 70vh; overflow-y: auto; }
   .filter-row { font-size: 12px; padding: 4px 0; }
   .export-row { font-size: 12px; padding: 4px 0; }
 }
