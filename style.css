@@ -98,8 +98,8 @@ header .top-nav-link {
     padding: 12px;
   }
   .leaflet-popup-content-wrapper {
-    max-width: calc(90vw - 16px) !important;
-    width: calc(90vw - 16px) !important;
+    max-width: min(calc(100vw - 48px), 340px) !important;
+    width: auto !important;
     overflow-x: hidden !important;
   }
   .spot-popup-view {
@@ -1625,6 +1625,14 @@ html.is-page-loading #ctrl-panel {
     width: 44px !important;
     height: 44px !important;
   }
+  .ctrl-btn.settings-control-btn {
+    width: 34px !important;
+    height: 34px !important;
+  }
+  .settings-control-icon {
+    width: 16px;
+    height: 16px;
+  }
   .leaflet-top.leaflet-right .leaflet-control {
     margin-right: 0 !important;
   }
@@ -2745,7 +2753,7 @@ header {
 
   .settings-close-btn {
     display: flex; align-items: center; justify-content: center;
-    position: fixed; top: 68px; right: 14px;
+    position: fixed; top: 72px; right: 20px;
     width: 34px; height: 34px; padding: 0;
     border: 1px solid rgba(166, 185, 255, 0.3);
     border-radius: 9px; background: rgba(143, 163, 255, 0.12);
@@ -3735,10 +3743,6 @@ header {
   .bottom-tools-bubble .ctrl-btn-icon { width: 18px; height: 18px; }
   .bottom-filter-popover,
   .bottom-export-popover { top: auto !important; bottom: calc(100% + 8px); }
-  .settings-control-icon {
-    width: 20px;
-    height: 20px;
-  }
   .settings-modal-content {
     max-width: 90vw;
     max-height: 90vh;
