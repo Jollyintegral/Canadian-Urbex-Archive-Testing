@@ -1,0 +1,20 @@
+# All Rights Reserved
+
+© 2026 Canadian Urbex Archive. All rights reserved.
+
+This project, including but not limited to:
+- source code
+- branding
+- logos
+- graphics
+- images
+- map data organization
+- written content
+- UI/UX design
+- documentation
+
+may not be copied, reproduced, modified, redistributed, republished, or used in any form without explicit written permission from the owners of Canadian Urbex Archive.
+
+Unauthorized use, impersonation, or redistribution of any part of this project may result in legal action.
+
+Canadian Urbex Archive is an independent project and all associated branding and original materials are protected under applicable copyright laws.
