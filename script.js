@@ -2029,25 +2029,27 @@ function runMapApp() {
     newMarker._spotClass = 'default';
     newMarker._spotComments = [];
     const wrap = document.createElement('div');
-    wrap.className = 'spot-popup-view spot-create-form';
-    wrap.innerHTML = `<div class="spot-popup-body is-editing">
-      <div class="spot-create-title">New Spot</div>
-      <select id="spotClass" class="spot-edit-class spot-create-class">
+    wrap.className = 'location-card is-creating';
+    wrap.innerHTML = `<div class="location-card-body">
+      <div class="location-card-create-title">New Spot</div>
+      <select id="spotClass" class="location-card-edit-class">
         <option value="default">No Class</option>
         <option value="confirmed">&#9989; Confirmed</option>
         <option value="risky">&#128308; Risky</option>
         <option value="unsure">&#128993; Unsure</option>
       </select>
-      <select id="spotMinRole" class="spot-edit-class spot-create-class">
+      <select id="spotMinRole" class="location-card-edit-class">
         <option value="visitor">Visitor+</option>
         <option value="member">Member+</option>
         <option value="editor">Editor+</option>
       </select>
-      <input type="text" id="spotName" class="spot-edit-name spot-create-name" placeholder="Name">
+      <input type="text" id="spotName" class="location-card-edit-name" placeholder="Name">
       <input type="file" id="spotImage" accept="image/*" multiple style="display:none">
-      <div id="spotDesc" class="spot-edit-desc spot-create-desc" contenteditable></div>
-      <button type="button" id="saveSpotBtn" class="save-edit-spot-btn spot-create-save-btn">Save to cloud</button>
-      <p id="saveStatus" class="edit-status spot-create-status"></p>
+      <div id="spotDesc" class="location-card-edit-desc" contenteditable></div>
+      <div class="location-card-edit-actions">
+        <button type="button" id="saveSpotBtn" class="location-card-edit-save">Save to cloud</button>
+      </div>
+      <p id="saveStatus" class="location-card-edit-status"></p>
     </div>
     <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
     addDescToolbar(wrap.querySelector('#spotDesc'), wrap.querySelector('#spotImage'));
@@ -2429,7 +2431,7 @@ function addEditableLinkSupport(editableEl) {
 
 function addViewOnlyLinkSupport(rootEl, options = {}) {
   if (!rootEl) return;
-  const descEl = rootEl.querySelector('.spot-desc');
+  const descEl = rootEl.querySelector('.location-card-full-desc, .location-card-desc-full, .spot-desc');
   if (!descEl || descEl.dataset.viewLinkBound === '1') return;
   descEl.dataset.viewLinkBound = '1';
   let controls = null;
@@ -2541,7 +2543,7 @@ function addDescToolbar(el, spotImageInput, spotId) {
       if (!files.length) return;
       const btn = bar.querySelectorAll('button')[3];
       btn.disabled = true;
-      const loadingOverlay = btn.closest('.spot-popup-view')?.querySelector('.spot-edit-loading-overlay');
+      const loadingOverlay = btn.closest('.location-card, .spot-popup-view')?.querySelector('.spot-edit-loading-overlay');
       if (loadingOverlay) loadingOverlay.style.display = 'flex';
       try {
         for (const file of files) {
@@ -2572,7 +2574,7 @@ function addDescToolbar(el, spotImageInput, spotId) {
           attachRow.dataset.url = publicUrl;
           attachRow.querySelector('.spot-edit-attach-remove').onclick = e => {
             e.stopPropagation();
-            const wrap = attachRow.closest('.spot-popup-view');
+            const wrap = attachRow.closest('.location-card, .spot-popup-view');
             if (!wrap._removedImagePaths) wrap._removedImagePaths = [];
             if (attachRow.dataset.path) wrap._removedImagePaths.push(attachRow.dataset.path);
             attachRow.remove();
@@ -2660,18 +2662,17 @@ function formatCommentTime(value) {
 
 function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], spotClass, minRole = 'visitor', comments = [], editMode, activePane = 'details' }) {
   const wrap = document.createElement('div');
-  wrap.className = 'spot-popup-view';
+  wrap.className = 'location-card';
+
   if (!editMode) {
     const spotLatLng = marker && typeof marker.getLatLng === 'function' ? marker.getLatLng() : null;
     const googleMapsUrl = spotLatLng
       ? `https://www.google.com/maps?q=${encodeURIComponent(`${spotLatLng.lat},${spotLatLng.lng}`)}`
       : '';
-    const mapsLinkHtml = googleMapsUrl
-      ? `<a class="spot-maps-link" href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer">View on Google Maps</a>`
-      : '';
     const currentComments = Array.isArray(comments) ? comments : [];
-    const editButtonHtml = '<button type="button" class="edit-spot-btn"' + (canEditSpots() ? '' : ' style="visibility:hidden"') + '>Edit</button>';
     const commentsCount = currentComments.length;
+
+    // Collect image URLs
     const urlSet = new Set();
     if (imageUrl) urlSet.add(imageUrl);
     if (Array.isArray(images)) images.forEach(u => { if (u) urlSet.add(u); });
@@ -2681,137 +2682,214 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       tempDiv.querySelectorAll('img').forEach(img => { if (img.src) urlSet.add(img.src); });
     }
     const allImageUrls = [...urlSet];
-    const galleryHtml = allImageUrls.length ? `<div class="spot-gallery-panel is-collapsed">
-      <div class="spot-gallery-nav">
-        ${allImageUrls.length > 1 ? '<button type="button" class="spot-gallery-nav-btn spot-gallery-prev">&#9664;</button>' : ''}
-        <span class="spot-gallery-indicator">1 / ${allImageUrls.length}</span>
-        ${allImageUrls.length > 1 ? '<button type="button" class="spot-gallery-nav-btn spot-gallery-next">&#9654;</button>' : ''}
-        <button type="button" class="spot-gallery-nav-btn spot-gallery-close">&#9660;</button>
+
+    // Labels
+    const statusLabels = { confirmed: 'Confirmed', risky: 'Risky', unsure: 'Unsure', default: 'No Class' };
+    const statusLabel = statusLabels[spotClass] || 'No Class';
+    const visibilityLabels = { visitor: 'Visitor+', member: 'Member+', editor: 'Editor+' };
+    const visibilityLabel = visibilityLabels[minRole] || 'Visitor+';
+    const subtitleParts = [];
+    if (spotLatLng) subtitleParts.push(`${spotLatLng.lat.toFixed(4)}, ${spotLatLng.lng.toFixed(4)}`);
+    subtitleParts.push(statusLabel);
+    const subtitle = subtitleParts.join(' · ');
+
+    // Meta grid
+    const metaHtml = `<div class="location-card-meta">
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Status</span>
+        <span class="location-card-meta-value">${statusLabel}</span>
       </div>
-      <img class="spot-gallery-main-img" src="${escapeHtml(allImageUrls[0])}" alt="${escapeHtml(name)}">
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Visibility</span>
+        <span class="location-card-meta-value">${visibilityLabel}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Coordinates</span>
+        <span class="location-card-meta-value">${spotLatLng ? `${spotLatLng.lat.toFixed(4)}, ${spotLatLng.lng.toFixed(4)}` : '—'}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Comments</span>
+        <span class="location-card-meta-value">${commentsCount}</span>
+      </div>
+    </div>`;
+
+    // Photo strip
+    const photosHtml = allImageUrls.length ? `<div class="location-card-photos">
+      ${allImageUrls.map(url => `<img class="location-card-photo-thumb" src="${escapeHtml(url)}" alt="">`).join('')}
     </div>` : '';
-    const reopenBtnHtml = allImageUrls.length ? '<button type="button" class="spot-gallery-reopen" title="Show images">&#9650;</button>' : '';
-    const detailsActiveClass = activePane === 'comments' ? '' : 'is-active';
-    const commentsActiveClass = activePane === 'comments' ? 'is-active' : '';
+
+    // Edit button for header
+    const editBtnHtml = canEditSpots() ? `<button class="location-card-action-btn" data-action="edit" title="Edit spot" aria-label="Edit spot">
+      <svg viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16v4zm14.7-11.3c.4-.4.4-1 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 4 4 1-1.2z"/></svg>
+    </button>` : '';
+
+    // Quick action cards
+    const actionsBarHtml = `<div class="location-card-actions-bar">
+      <div class="location-card-action-card" data-action="expand" role="button" tabindex="0">
+        <span class="action-icon">+</span> Details
+      </div>
+      <div class="location-card-action-card" data-action="comments" role="button" tabindex="0">
+        <span class="action-icon">💬</span> Comments (${commentsCount})
+      </div>
+      ${googleMapsUrl ? `<div class="location-card-action-card" data-action="directions" role="button" tabindex="0">
+        <span class="action-icon">→</span> Directions
+      </div>` : ''}
+      ${allImageUrls.length ? `<div class="location-card-action-card" data-action="photos" role="button" tabindex="0">
+        <span class="action-icon">🖼</span> Photos
+      </div>` : ''}
+    </div>`;
+
+    // Comments for expandable
     const commentsHtml = currentComments.length
       ? currentComments.map((comment, idx) => {
           const commentText = escapeHtml((comment && comment.text) || '');
           const commentAuthor = escapeHtml((comment && comment.author) || 'User');
           const commentTime = formatCommentTime(comment && comment.createdAt);
-          const timeSuffix = commentTime ? ` - ${escapeHtml(commentTime)}` : '';
+          const timeSuffix = commentTime ? ` · ${escapeHtml(commentTime)}` : '';
           const deleteButton = isAdminRole()
-            ? `<button type="button" class="spot-comment-delete-btn" data-comment-index="${idx}">Delete</button>`
+            ? `<button type="button" class="location-card-comment-delete" data-comment-index="${idx}">Delete</button>`
             : '';
-          return `<div class="spot-comment-item">
-            <div class="spot-comment-meta-row">
-              <div class="spot-comment-meta">${commentAuthor}${timeSuffix}</div>
-              ${deleteButton}
+          return `<div class="location-card-comment-item">
+            <div class="location-card-comment-meta">
+              <span class="location-card-comment-author">${commentAuthor}</span>
+              <span>${timeSuffix}${deleteButton}</span>
             </div>
-            <div class="spot-comment-text">${commentText}</div>
+            <div class="location-card-comment-text">${commentText}</div>
           </div>`;
         }).join('')
-      : '<div class="spot-comment-empty">No comments yet.</div>';
-        wrap.innerHTML = `<div class="spot-popup-body">
-        ${galleryHtml}
-        <div class="spot-name-row">
-          <strong class="spot-popup-name">${escapeHtml(name)}</strong>
-          ${reopenBtnHtml}
+      : '<div class="location-card-comment-empty">No comments yet.</div>';
+
+    // Extra metadata for Details expandable
+    const extraMetaHtml = `<div class="location-card-full-meta">
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Spot ID</span>
+        <span class="location-card-meta-value">${escapeHtml(spotId)}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Latitude</span>
+        <span class="location-card-meta-value">${spotLatLng ? spotLatLng.lat.toFixed(6) : '—'}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Longitude</span>
+        <span class="location-card-meta-value">${spotLatLng ? spotLatLng.lng.toFixed(6) : '—'}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Status</span>
+        <span class="location-card-meta-value">${statusLabel}</span>
+      </div>
+      <div class="location-card-meta-item">
+        <span class="location-card-meta-label">Visibility</span>
+        <span class="location-card-meta-value">${visibilityLabel}</span>
+      </div>
+    </div>`;
+
+    // Expandable section (Details shows description + meta, Comments shows comments)
+    const expandableHtml = `<div class="location-card-expandable">
+      <div class="location-card-expandable-inner">
+        <div data-pane="details">
+          ${desc ? `<div class="location-card-full-desc">${desc}</div>` : ''}
+          ${extraMetaHtml}
         </div>
-        <div class="spot-pane spot-pane-details ${detailsActiveClass}">
-          <div class="spot-desc">${desc || ''}</div>
-        </div>
-        <div class="spot-pane spot-pane-comments ${commentsActiveClass}">
-          <div class="spot-comments-wrap">
-            <div class="spot-comments-list">${commentsHtml}</div>
-            <div class="spot-comment-form">
-              <textarea class="spot-comment-input" rows="2" maxlength="300" placeholder="Add a comment"></textarea>
-              <button type="button" class="spot-comment-save-btn">Post comment</button>
-              <p class="spot-comment-status"></p>
-            </div>
+        <div class="location-card-comments" data-pane="comments">
+          <h4 class="location-card-comments-title">Comments</h4>
+          <div class="location-card-comments-list">${commentsHtml}</div>
+          <div class="location-card-comment-form">
+            <textarea class="location-card-comment-input" rows="2" maxlength="300" placeholder="Add a comment"></textarea>
+            <button type="button" class="location-card-comment-btn">Post</button>
           </div>
+          <p class="location-card-edit-status" style="display:none"></p>
         </div>
-        <div class="spot-popup-tabs">
-          <button type="button" class="spot-tab-btn ${detailsActiveClass}" data-pane="details">Details</button>
-          <button type="button" class="spot-tab-btn ${commentsActiveClass}" data-pane="comments">Comments (${commentsCount})</button>
-          ${editButtonHtml}
+      </div>
+    </div>`;
 
+    // Full card assembly
+    wrap.innerHTML = `<div class="location-card-header">
+      <div class="location-card-title-row">
+        <div class="location-card-status-dot is-${spotClass}"></div>
+        <div class="location-card-name-wrap">
+          <h3 class="location-card-name">${escapeHtml(name)}</h3>
+          <p class="location-card-subtitle">${escapeHtml(subtitle)}</p>
         </div>
-        <div class="spot-maps-link-wrap">${mapsLinkHtml}</div>
-      </div>`;
+      </div>
+      <div class="location-card-actions">
+        ${editBtnHtml}
+      </div>
+    </div>
+    <div class="location-card-body">
+      ${metaHtml}
+      ${photosHtml}
+    </div>
+    ${actionsBarHtml}
+    ${expandableHtml}`;
 
-    const nameEl = wrap.querySelector('.spot-popup-name');
-    if (nameEl && name.length > 30) nameEl.classList.add('is-long');
-
-    if (canEditSpots()) {
-      const editBtn = wrap.querySelector('.edit-spot-btn');
-      if (editBtn) {
-        editBtn.onclick = e => {
-          e.preventDefault(); e.stopPropagation();
-          const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
-          marker.getPopup().setContent(editWrap);
-          marker.getPopup().openPopup();
-          styleEditCloseButton(marker);
-          marker.dragging.enable();
-          marker.once('dragstart', () => marker.getPopup().closePopup());
-        };
-      }
+    // ── Edit button ──
+    const editBtn = wrap.querySelector('[data-action="edit"]');
+    if (editBtn) {
+      editBtn.onclick = e => {
+        e.preventDefault(); e.stopPropagation();
+        const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
+        marker.getPopup().setContent(editWrap);
+        marker.getPopup().openPopup();
+        marker.dragging.enable();
+        marker.once('dragstart', () => marker.getPopup().closePopup());
+      };
     }
 
+    // ── Action cards ──
+    const expandable = wrap.querySelector('.location-card-expandable');
+    if (expandable) {
+      wrap.querySelectorAll('.location-card-action-card').forEach(card => {
+        card.onclick = e => {
+          e.stopPropagation();
+          const action = card.dataset.action;
+          if (action === 'expand') {
+            const isOpen = expandable.classList.toggle('is-open');
+            const icon = card.querySelector('.action-icon');
+            if (icon) icon.textContent = isOpen ? '−' : '+';
+            card.textContent = isOpen ? ' Close' : ' Details';
+            if (icon) card.prepend(icon);
+            if (isOpen) {
+              const metaSection = expandable.querySelector('[data-pane="details"]');
+              if (metaSection) metaSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          } else if (action === 'comments') {
+            expandable.classList.add('is-open');
+            const commentsEl = expandable.querySelector('.location-card-comments');
+            if (commentsEl) commentsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } else if (action === 'directions' && googleMapsUrl) {
+            window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+          } else if (action === 'photos' && allImageUrls.length) {
+            showImageOverlay(allImageUrls[0]);
+          }
+        };
+      });
+    }
+
+    // ── Photo thumb clicks ──
+    wrap.querySelectorAll('.location-card-photo-thumb').forEach((thumb, idx) => {
+      thumb.onclick = e => { e.stopPropagation(); showImageOverlay(allImageUrls[idx]); };
+    });
+
+    // ── Link controls on description anchors ──
     addViewOnlyLinkSupport(wrap, {
       onEditLink: canEditSpots() ? () => {
         const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
         marker.getPopup().setContent(editWrap);
         marker.getPopup().openPopup();
-        styleEditCloseButton(marker);
         marker.dragging.enable();
         marker.once('dragstart', () => marker.getPopup().closePopup());
       } : null
     });
 
-    const galleryPanel = wrap.querySelector('.spot-gallery-panel');
-    const galleryImg = wrap.querySelector('.spot-gallery-main-img');
-    const galleryPrev = wrap.querySelector('.spot-gallery-prev');
-    const galleryNext = wrap.querySelector('.spot-gallery-next');
-    const galleryClose = wrap.querySelector('.spot-gallery-close');
-    const galleryIndicator = wrap.querySelector('.spot-gallery-indicator');
-    const galleryReopen = wrap.querySelector('.spot-gallery-reopen');
-    let currentIdx = 0;
-    function updateGalleryIdx(idx) {
-      currentIdx = idx;
-      if (galleryImg) galleryImg.src = allImageUrls[idx];
-      if (galleryIndicator) galleryIndicator.textContent = (idx + 1) + ' / ' + allImageUrls.length;
-    }
-    if (galleryClose && galleryPanel) {
-      galleryClose.onclick = e => { e.stopPropagation(); galleryPanel.classList.add('is-collapsed'); if (galleryReopen) galleryReopen.classList.remove('is-hidden'); };
-    }
-    if (galleryPrev) galleryPrev.onclick = e => { e.stopPropagation(); updateGalleryIdx((currentIdx - 1 + allImageUrls.length) % allImageUrls.length); };
-    if (galleryNext) galleryNext.onclick = e => { e.stopPropagation(); updateGalleryIdx((currentIdx + 1) % allImageUrls.length); };
-    if (galleryReopen && galleryPanel) {
-      galleryReopen.onclick = e => { e.stopPropagation(); galleryPanel.classList.remove('is-collapsed'); galleryReopen.classList.add('is-hidden'); updateGalleryIdx(0); };
-    }
-
-    const paneDetails = wrap.querySelector('.spot-pane-details');
-    const paneComments = wrap.querySelector('.spot-pane-comments');
-    const tabButtons = wrap.querySelectorAll('.spot-tab-btn');
-    tabButtons.forEach((btn) => {
-      btn.onclick = () => {
-        const pane = btn.getAttribute('data-pane');
-        const showComments = pane === 'comments';
-        tabButtons.forEach((b) => b.classList.toggle('is-active', b === btn));
-        if (paneDetails) paneDetails.classList.toggle('is-active', !showComments);
-        if (paneComments) paneComments.classList.toggle('is-active', showComments);
-      };
-    });
-
-    const commentInput = wrap.querySelector('.spot-comment-input');
-    const commentBtn = wrap.querySelector('.spot-comment-save-btn');
-    const commentStatus = wrap.querySelector('.spot-comment-status');
+    // ── Comment posting ──
+    const commentInput = wrap.querySelector('.location-card-comment-input');
+    const commentBtn = wrap.querySelector('.location-card-comment-btn');
+    const commentStatus = wrap.querySelector('.location-card-edit-status');
     if (commentBtn && commentInput) {
       commentBtn.onclick = async () => {
         const text = commentInput.value.trim();
         if (!text) {
-          commentStatus.textContent = 'Write a comment first.';
-          commentStatus.style.color = '#b00020';
+          if (commentStatus) { commentStatus.textContent = 'Write a comment first.'; commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
           return;
         }
         const newComment = {
@@ -2822,8 +2900,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         };
         const nextComments = [...currentComments, newComment];
         commentBtn.disabled = true;
-        commentStatus.textContent = 'Saving...';
-        commentStatus.style.color = '#333';
+        if (commentStatus) { commentStatus.textContent = 'Saving...'; commentStatus.style.color = '#333'; commentStatus.style.display = 'block'; }
         try {
           await updateDoc(doc(db, SPOTS_COLLECTION, spotId), {
             comments: nextComments,
@@ -2831,108 +2908,100 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
           });
           marker._spotComments = nextComments;
           marker.getPopup().setContent(createSpotPopup({
-            marker,
-            spotId,
-            name,
-            desc,
-            imageUrl,
-            images: marker._spotImages || [],
-            spotClass,
+            marker, spotId, name, desc, imageUrl,
+            images: marker._spotImages || [], spotClass,
             minRole: marker._spotMinRole || minRole,
             comments: marker._spotComments,
-            editMode: false,
-            activePane: 'comments'
+            editMode: false, activePane: 'comments'
           }));
           marker.getPopup().openPopup();
         } catch (err) {
-          commentStatus.textContent = 'Error: ' + (err.code || err.message || String(err));
-          commentStatus.style.color = '#b00020';
+          if (commentStatus) { commentStatus.textContent = 'Error: ' + (err.code || err.message || String(err)); commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
         } finally {
           commentBtn.disabled = false;
         }
       };
     }
 
-  if (isAdminRole()) {
-    wrap.querySelectorAll('.spot-comment-delete-btn').forEach((btn) => {
-      btn.onclick = async () => {
-        const index = Number(btn.getAttribute('data-comment-index'));
-        if (!Number.isInteger(index) || index < 0 || index >= currentComments.length) return;
-        const nextComments = currentComments.filter((_, i) => i !== index);
-        btn.disabled = true;
-        try {
-          await updateDoc(doc(db, SPOTS_COLLECTION, spotId), {
-            comments: nextComments,
-            updatedAt: serverTimestamp()
-          });
-          marker._spotComments = nextComments;
-          marker.getPopup().setContent(createSpotPopup({
-            marker,
-            spotId,
-            name,
-            desc,
-            imageUrl,
-            images: marker._spotImages || [],
-            spotClass,
+    // ── Admin comment deletion ──
+    if (isAdminRole()) {
+      wrap.querySelectorAll('.location-card-comment-delete').forEach(btn => {
+        btn.onclick = async () => {
+          const index = Number(btn.getAttribute('data-comment-index'));
+          if (!Number.isInteger(index) || index < 0 || index >= currentComments.length) return;
+          const nextComments = currentComments.filter((_, i) => i !== index);
+          btn.disabled = true;
+          try {
+            await updateDoc(doc(db, SPOTS_COLLECTION, spotId), {
+              comments: nextComments,
+              updatedAt: serverTimestamp()
+            });
+            marker._spotComments = nextComments;
+            marker.getPopup().setContent(createSpotPopup({
+              marker, spotId, name, desc, imageUrl,
+              images: marker._spotImages || [], spotClass,
               minRole: marker._spotMinRole || minRole,
               comments: marker._spotComments,
-              editMode: false,
-              activePane: 'comments'
+              editMode: false, activePane: 'comments'
             }));
             marker.getPopup().openPopup();
           } catch (err) {
-            const msg = wrap.querySelector('.spot-comment-status');
-            if (msg) {
-              msg.textContent = 'Delete failed: ' + (err.code || err.message || String(err));
-              msg.style.color = '#b00020';
-            }
             btn.disabled = false;
+            if (commentStatus) { commentStatus.textContent = 'Delete failed: ' + (err.code || err.message || String(err)); commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
           }
         };
       });
     }
+
   } else {
+    // ═══════ EDIT MODE ═══════
     wrap.classList.add('is-editing');
-    wrap.innerHTML =
-      `<div class="spot-popup-body is-editing">
-        <input class="spot-edit-name" value="${escapeHtml(name)}" type="text">
-        <select class="spot-edit-class">
-          <option value="default">No Class</option>
-          <option value="confirmed">&#9989; Confirmed</option>
-          <option value="risky">&#128308; Risky</option>
-          <option value="unsure">&#128993; Unsure</option>
-        </select>
-        <select class="spot-edit-min-role">
-          <option value="visitor">Visitor+</option>
-          <option value="member">Member+</option>
-          <option value="editor">Editor+</option>
-        </select>
-        <input type="file" class="spot-edit-image" accept="image/*" multiple style="display:none">
-        <div class="spot-edit-desc" contenteditable>${desc || ''}</div>
-        <div class="spot-edit-attachments"></div>
-        <button type="button" class="save-edit-spot-btn">Save</button>
-        <button type="button" class="delete-edit-spot-btn">Delete</button>
-        <p class="edit-status"></p>
+    wrap.innerHTML = `<div class="location-card-body">
+      <input class="location-card-edit-name" value="${escapeHtml(name)}" type="text">
+      <select class="location-card-edit-class">
+        <option value="default">No Class</option>
+        <option value="confirmed">&#9989; Confirmed</option>
+        <option value="risky">&#128308; Risky</option>
+        <option value="unsure">&#128993; Unsure</option>
+      </select>
+      <select class="location-card-edit-min-role">
+        <option value="visitor">Visitor+</option>
+        <option value="member">Member+</option>
+        <option value="editor">Editor+</option>
+      </select>
+      <input type="file" class="spot-edit-image" accept="image/*" multiple style="display:none">
+      <div class="location-card-edit-desc" contenteditable>${desc || ''}</div>
+      <div class="spot-edit-attachments"></div>
+      <div class="location-card-edit-actions">
+        <button type="button" class="location-card-edit-save">Save</button>
+        <button type="button" class="location-card-edit-delete">Delete</button>
       </div>
-      <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
-    // Set current class from data, with backward compatibility for older values.
-    const classSel = wrap.querySelector('.spot-edit-class');
+      <p class="location-card-edit-status"></p>
+    </div>
+    <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
+
+    // Set current values
+    const classSel = wrap.querySelector('.location-card-edit-class');
     classSel.value = normalizeSpotClass(spotClass || marker._spotClass);
-    const minRoleSel = wrap.querySelector('.spot-edit-min-role');
+    const minRoleSel = wrap.querySelector('.location-card-edit-min-role');
     minRoleSel.value = normalizeVisibilityRole(minRole || marker._spotMinRole || 'visitor');
-    const descEl = wrap.querySelector('.spot-edit-desc');
+    const descEl = wrap.querySelector('.location-card-edit-desc');
     addDescToolbar(descEl, wrap.querySelector('.spot-edit-image'), spotId);
+
+    // Attachment list from existing images
     const attachContainer = wrap.querySelector('.spot-edit-attachments');
-    const urlSet = new Set();
-    if (imageUrl) urlSet.add(imageUrl);
-    if (Array.isArray(images)) images.forEach(u => { if (u) urlSet.add(u); });
+    const existingUrls = [];
+    if (imageUrl) existingUrls.push(imageUrl);
+    if (Array.isArray(images)) images.forEach(u => { if (u) existingUrls.push(u); });
     if (desc) {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = desc;
-      tempDiv.querySelectorAll('img').forEach(img => { if (img.src) urlSet.add(img.src); });
+      tempDiv.querySelectorAll('img').forEach(img => { if (img.src) existingUrls.push(img.src); });
     }
-    const existingUrls = [...urlSet];
+    const seen = new Set();
     existingUrls.forEach(url => {
+      if (seen.has(url)) return;
+      seen.add(url);
       const pathMatch = url.match(/\/spot-images\/([^?#]+)/);
       const path = pathMatch ? decodeURIComponent(pathMatch[1]) : null;
       const fileName = url.split('/').pop() || 'image';
@@ -2954,8 +3023,10 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       attachContainer.appendChild(row);
     });
     setupAttachContainer(attachContainer);
-    wrap.querySelector('.save-edit-spot-btn').onclick = async () => {
-      const newName = (wrap.querySelector('.spot-edit-name').value.trim()) || 'Unnamed spot';
+
+    // Save
+    wrap.querySelector('.location-card-edit-save').onclick = async () => {
+      const newName = (wrap.querySelector('.location-card-edit-name').value.trim()) || 'Unnamed spot';
       const newClass = normalizeSpotClass(classSel.value);
       const newMinRole = normalizeVisibilityRole(minRoleSel.value);
       const fileInput = wrap.querySelector('.spot-edit-image');
@@ -2993,18 +3064,18 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         upsertSpotSearchEntry(spotId, newName, marker);
         marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
         const pop = marker.getPopup();
-        const cb = pop._closeButton;
-        if (cb) cb.style.cssText = '';
         const w = pop._wrapper;
         if (w) w.classList.remove('is-editing');
         pop.update();
       } catch (err) {
         loadingOverlay.style.display = 'none';
-        wrap.querySelector('.edit-status').textContent = 'Error: ' + (err.code || err.message || String(err));
-        wrap.querySelector('.edit-status').style.color = 'red';
+        const status = wrap.querySelector('.location-card-edit-status');
+        if (status) { status.textContent = 'Error: ' + (err.code || err.message || String(err)); status.style.color = 'red'; }
       }
     };
-    wrap.querySelector('.delete-edit-spot-btn').onclick = async () => {
+
+    // Delete
+    wrap.querySelector('.location-card-edit-delete').onclick = async () => {
       if (!confirm('Are you sure you want to delete this spot?')) return;
       try {
         const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
@@ -3022,24 +3093,6 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     };
   }
   return wrap;
-}
-
-function styleEditCloseButton(marker) {
-  const popup = marker.getPopup();
-  const closeBtn = popup._closeButton;
-  if (!closeBtn) return;
-  closeBtn.style.cssText = 'top:auto!important;bottom:28px!important;left:auto!important;right:6px!important;color:#ff4d4d!important;font-size:20px!important;font-weight:700!important;padding:0!important;border:none!important;background:none!important';
-  const wrapper = popup._wrapper;
-  if (wrapper) wrapper.classList.add('is-editing');
-  const map = popup._map;
-  if (map) {
-    map.once('popupclose', function resetCloseBtn() {
-      const cb = marker.getPopup()._closeButton;
-      if (cb) cb.style.cssText = '';
-      const w = marker.getPopup()._wrapper;
-      if (w) w.classList.remove('is-editing');
-    });
-  }
 }
 
 wireAccountMenu();
