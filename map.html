@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Canadian Urbex Archive</title>
   <link rel="icon" type="image/png" href="CUA Logo.png">
+  <script>(function(){try{var t=sessionStorage.getItem('urbex_theme')||localStorage.getItem('urbex_theme');if(t)document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.add('is-page-loading')}catch(e){}})();</script>
 
   <!-- Leaflet CSS -->
   <link
@@ -70,11 +71,9 @@
 
 <button id="addSpotBtn" type="button" aria-label="Add a spot" style="display:none;">
   <svg class="add-spot-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <!-- Pin shape — light grey-blue to match button controls -->
     <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
-          fill="#c8d8ff" opacity="0.8"/>
-    <!-- Dark inner circle -->
-    <circle cx="12" cy="9" r="3.4" fill="rgba(12,22,44,0.95)"/>
+          fill="currentColor" opacity="0.8"/>
+    <circle cx="12" cy="9" r="3.4" fill="rgba(0,0,0,0.75)"/>
   </svg>
 </button>
 
@@ -102,7 +101,6 @@
             <span class="settings-toggle-switch"></span>
             <span class="settings-toggle-text">Marker Clustering</span>
           </label>
-          <p class="settings-option-description">Group nearby markers for cleaner map view</p>
         </div>
       </div>
 
@@ -153,6 +151,8 @@
           </div>
         </div>
       </div>
+
+
     </div>
   </div>
 </div>
@@ -209,6 +209,27 @@
         <h3>Data Access and Control</h3>
         <p>Your account settings and privacy preferences can be changed from the site controls where available. If data needs to be corrected or removed, you may contact me via Email (liamnova9@gmail.com) or Discord (@Jollyintegral) for assistance.</p>
       </section>
+    </div>
+  </div>
+</div>
+
+<!-- Export Modal -->
+<div id="exportModal" class="settings-modal" style="display:none;">
+  <div class="settings-modal-backdrop export-modal-backdrop"></div>
+  <div class="settings-modal-content export-modal-content">
+    <div class="settings-modal-header">
+      <h2>Export Data</h2>
+      <button class="settings-modal-close export-modal-close" type="button" aria-label="Close export modal">x</button>
+    </div>
+    <div class="settings-modal-body export-modal-body">
+      <label class="export-row" data-key="profile"><span>Profile data</span><input type="checkbox" checked></label>
+      <label class="export-row" data-key="spotName"><span>Spot names</span><input type="checkbox" checked></label>
+      <label class="export-row" data-key="spotCoords"><span>Spot coordinates</span><input type="checkbox" checked></label>
+      <label class="export-row" data-key="spotDesc"><span>Spot descriptions</span><input type="checkbox" checked></label>
+      <div class="export-modal-actions">
+        <button class="ctrl-popover-action export-modal-toggle">Select All</button>
+        <button class="ctrl-popover-action export-modal-download">Download <span class="export-arrow">&#9660;</span></button>
+      </div>
     </div>
   </div>
 </div>

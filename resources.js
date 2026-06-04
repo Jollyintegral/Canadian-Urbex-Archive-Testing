@@ -1,6 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
+import { applyTheme, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -12,6 +14,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 let guestMode = sessionStorage.getItem('guestMode') === '1';
@@ -70,6 +73,7 @@ function wireHeaderActions() {
     sessionStorage.removeItem('guestMode');
     sessionStorage.removeItem('authSignedIn');
     sessionStorage.removeItem('userRole');
+    clearThemeCache();
     await signOut(auth);
     updateAccountUi(null);
   };
@@ -145,19 +149,24 @@ function wireResourceDropdownAnimations() {
 
 wireResourceDropdownAnimations();
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (!user) {
     guestMode = sessionStorage.getItem('guestMode') === '1';
+    applyTheme('');
     updateAccountUi(null);
+    hidePageLoading();
     return;
   }
   sessionStorage.setItem('authSignedIn', '1');
   if (user.isAnonymous) {
     sessionStorage.setItem('userRole', 'visitor');
+    applyTheme('');
   } else {
     sessionStorage.removeItem('guestMode');
     guestMode = false;
     if (!sessionStorage.getItem('userRole')) sessionStorage.setItem('userRole', 'member');
+    await loadUserTheme(db, user.uid);
   }
   updateAccountUi(user);
+  hidePageLoading();
 });

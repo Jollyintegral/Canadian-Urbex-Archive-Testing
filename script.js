@@ -3,6 +3,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { 
   getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, getDoc, setDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { applyTheme, getCurrentTheme, saveThemePreference, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import {
   getAuth,
@@ -43,6 +44,7 @@ let activeLinkControlsCloser = null;
 let spotMarkers = [];
 let activeSpotMarker = null;
 let activeFilters = { confirmed: true, risky: true, unsure: true, default: true };
+let lastKnownUserLatLng = null;
 
 function normalizeVisibilityRole(role) {
   const value = (role || '').toString().trim().toLowerCase();
@@ -109,16 +111,19 @@ function focusSpotResult(match) {
     : map.hasLayer(match.marker);
   if (!markerAvailable) return;
   const latLng = match.marker.getLatLng();
+  const zoom = Math.max(map.getZoom(), 16);
   if (spotClusterGroup && typeof spotClusterGroup.zoomToShowLayer === 'function') {
-    map.flyTo([latLng.lat, latLng.lng], Math.max(map.getZoom(), 14), { duration: 0.7 });
-    spotClusterGroup.zoomToShowLayer(match.marker, () => {
-      match.marker.openPopup();
+    map.flyTo([latLng.lat, latLng.lng], zoom, { duration: 1.5 });
+    map.once('moveend', () => {
+      spotClusterGroup.zoomToShowLayer(match.marker, () => {
+        match.marker.openPopup();
+      });
     });
     return;
   }
 
-  map.flyTo([latLng.lat, latLng.lng], Math.max(map.getZoom(), 16), { duration: 0.7 });
-  setTimeout(() => match.marker.openPopup(), 450);
+  map.flyTo([latLng.lat, latLng.lng], zoom, { duration: 1.5 });
+  setTimeout(() => match.marker.openPopup(), 1550);
 }
 
 function parseCoordinateInput(input) {
@@ -548,6 +553,7 @@ function clearRenderedSpots() {
 }
 
 let addMode = false;
+let addSpotProcessing = false;
 
 async function ensureUserRoleDoc(user) {
   const ref = doc(db, 'users', user.uid);
@@ -651,6 +657,7 @@ function wireAccountMenu() {
     addMode = false;
     const addSpotBtn = document.getElementById('addSpotBtn');
     if (addSpotBtn) addSpotBtn.style.display = 'none';
+    clearThemeCache();
     await signOut(auth);
     window.location.reload();
   };
@@ -675,6 +682,7 @@ function wireAuthButtons() {
   if (signOutBtn) {
     signOutBtn.onclick = async () => {
       try {
+        clearThemeCache();
         await signOut(auth);
       } catch (error) {
         setAuthStatus('Sign out failed: ' + (error.code || error.message || String(error)), true);
@@ -757,10 +765,12 @@ function initAuthGate() {
       addMode = false;
       const addSpotBtn = document.getElementById('addSpotBtn');
       if (addSpotBtn) addSpotBtn.style.display = 'none';
+      applyTheme('');
       if (signInBtn) signInBtn.style.display = 'inline-flex';
       if (signOutBtn) signOutBtn.style.display = 'none';
       if (gateEl) gateEl.style.display = 'none';
-      if (!map) runMapApp();
+      if (!map) { runMapApp(); refreshAddSpotControl(); }
+      hidePageLoading();
       return;
     }
 
@@ -775,27 +785,31 @@ function initAuthGate() {
       } else {
         userRole = await ensureUserRoleDoc(user);
       }
+      await loadUserTheme(db, user?.uid);
       sessionStorage.setItem('userRole', normalizeRole(userRole));
       setSignedInUserUi(user, userRole);
       updateAccountMenuUi(user, userRole);
       if (signInBtn) signInBtn.style.display = 'none';
       if (signOutBtn) signOutBtn.style.display = 'inline-flex';
       if (gateEl) gateEl.style.display = 'none';
-      if (!map) runMapApp();
+      if (!map) { runMapApp(); refreshAddSpotControl(); }
       else {
         clearRenderedSpots();
         loadSpots();
         refreshAddSpotControl();
       }
+      hidePageLoading();
     } catch (error) {
       userRole = 'visitor';
+      await loadUserTheme(db, user?.uid);
       setSignedInUserUi(user, userRole);
       updateAccountMenuUi(user, userRole);
       setAuthStatus('Could not load your role. Defaulting to visitor.', true);
       if (signInBtn) signInBtn.style.display = 'none';
       if (signOutBtn) signOutBtn.style.display = 'inline-flex';
       if (gateEl) gateEl.style.display = 'none';
-      if (!map) runMapApp();
+      if (!map) { runMapApp(); refreshAddSpotControl(); }
+      hidePageLoading();
     }
   });
 }
@@ -875,6 +889,7 @@ function addLocationControl() {
         lastUpdateTime = now;
 
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        lastKnownUserLatLng = { lat, lng };
 
         if (locationMarker) { locationMarker.remove(); locationMarker = null; }
         if (locationCircle) { locationCircle.remove(); locationCircle = null; }
@@ -947,6 +962,7 @@ function addSettingsControl() {
   `;
 
   btn.addEventListener('click', () => {
+    if (typeof closeBottomTools === 'function') closeBottomTools();
     settingsModal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
   });
@@ -1064,6 +1080,7 @@ function addSettingsControl() {
   if (analyticsSaved !== null) {
     analyticsToggle.checked = analyticsSaved === 'true';
   }
+
 }
 
 function refreshAddSpotControl() {
@@ -1073,7 +1090,7 @@ function refreshAddSpotControl() {
     btn.style.display = 'flex';
     const panel = document.getElementById('ctrl-panel');
     if (panel && btn.parentNode !== panel) panel.appendChild(btn);
-    btn.onclick = () => { addMode = true; alert('Click on the map to add a spot'); };
+    btn.onclick = (e) => { e.stopPropagation(); addMode = true; };
   } else {
     btn.style.display = 'none';
     addMode = false;
@@ -1112,6 +1129,397 @@ bubbleExportBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill
 bottomToolsBubble.appendChild(bubbleFilterBtn);
 bottomToolsBubble.appendChild(bubbleExportBtn);
 
+// ── Radar Mode ──
+let radarModeEnabled = false;
+let radarModeInterval = null;
+let radarModeResults = [];
+let radarPulseCircles = [];
+let radarPriorityBubble = null;
+let radarScanRing = null;
+let radarScanRingPhase = 0;
+let radarScanRingInterval = null;
+let radarPanel = null;
+let radarSlideout = null;
+let radarSlideoutOpen = false;
+let radarMoveTimeout = null;
+let radarOriginMode = 'freeroam';
+let radarRadiusKm = 10;
+let radarUserLatLng = null;
+let radarWatchId = null;
+let radarGpsInterval = null;
+let radarGpsAvailable = false;
+let radarDenied = false;
+
+const radarModeToggleBtn = document.createElement('button');
+radarModeToggleBtn.type = 'button';
+radarModeToggleBtn.className = 'ctrl-btn';
+radarModeToggleBtn.title = 'Radar Mode';
+radarModeToggleBtn.setAttribute('aria-label', 'Radar Mode');
+radarModeToggleBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/><path d="M12 12l6-6"/><path d="M17 6h1v1"/></svg>';
+
+radarSlideout = document.createElement('div');
+radarSlideout.className = 'radar-slideout';
+radarSlideout.style.display = 'none';
+radarSlideout.innerHTML =
+  '<div class="radar-slideout-body">' +
+  '<label class="radar-slideout-toggle"><span class="radar-slideout-toggle-text">Enable Radar Mode</span><div class="radar-slideout-switch"><input type="checkbox" id="radarEnableCheck" class="radar-slideout-checkbox"><span class="radar-slideout-slider"></span></div></label>' +
+  '</div>';
+document.body.appendChild(radarSlideout);
+
+radarPanel = document.createElement('div');
+radarPanel.className = 'radar-panel';
+radarPanel.style.display = 'none';
+radarPanel.innerHTML =
+  '<div class="radar-panel-header">' +
+  '<span class="radar-panel-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/><path d="M12 12l6-6"/></svg></span>' +
+  '<div class="radar-panel-title-group">' +
+  '<span class="radar-panel-title">Radar Nearby</span>' +
+  '<div class="radar-mode-wrap"><button type="button" class="radar-mode-trigger">Freeroam</button><div class="radar-mode-menu" style="display:none"><button type="button" data-value="freeroam">Freeroam</button><button type="button" data-value="location">My Location</button></div></div>' +
+  '<div class="radar-radius-wrap"><button type="button" class="radar-radius-trigger">10 km</button><div class="radar-radius-menu" style="display:none"><button type="button" data-value="1">1 km</button><button type="button" data-value="5">5 km</button><button type="button" data-value="10">10 km</button><button type="button" data-value="15">15 km</button><button type="button" data-value="30">30 km</button></div></div>' +
+  '<span class="radar-count-badge"></span></div>' +
+  '<button type="button" class="radar-panel-close" aria-label="Close radar" title="Close Radar">&times;</button></div>' +
+  '<div class="radar-panel-body"><div class="radar-panel-results"></div></div>';
+document.body.appendChild(radarPanel);
+initRadarRadiusDropdown();
+initRadarModeDropdown();
+
+radarPanel.querySelector('.radar-panel-close').addEventListener('click', function() {
+  if (radarModeEnabled) toggleRadarMode();
+});
+
+function getRadarOrigin() {
+  if (radarOriginMode === 'location' && radarGpsAvailable && radarUserLatLng) return radarUserLatLng;
+  if (!map) return L.latLng(0, 0);
+  var c = map.getCenter();
+  return L.latLng(c.lat, c.lng);
+}
+
+function toggleRadarMode() {
+  radarModeEnabled = !radarModeEnabled;
+  var checkbox = document.getElementById('radarEnableCheck');
+  if (checkbox) checkbox.checked = radarModeEnabled;
+  radarModeToggleBtn.classList.toggle('is-active', radarModeEnabled);
+  if (radarModeEnabled) enableRadarMode(); else disableRadarMode();
+}
+
+function enableRadarMode() {
+  radarPanel.style.display = '';
+  if (radarOriginMode === 'location') startGpsWatch();
+  clearRadarPulseEffects();
+  showRadarLoading();
+  syncRadarControls();
+  updateRadarResults();
+  radarModeInterval = setInterval(updateRadarResults, 2000);
+  radarScanRingPhase = 0;
+  radarScanRingInterval = setInterval(animateScanRing, 80);
+  map.on('moveend', onRadarMapMove);
+  if (window.innerWidth <= 700) {
+    bottomToolsWrap.style.display = 'none';
+  }
+}
+
+function disableRadarMode() {
+  radarPanel.style.display = 'none';
+  if (radarModeInterval) { clearInterval(radarModeInterval); radarModeInterval = null; }
+  if (radarScanRingInterval) { clearInterval(radarScanRingInterval); radarScanRingInterval = null; }
+  if (radarMoveTimeout) { clearTimeout(radarMoveTimeout); radarMoveTimeout = null; }
+  map.off('moveend', onRadarMapMove);
+  stopGpsWatch();
+  clearRadarPulseEffects();
+  radarModeResults = [];
+  if (window.innerWidth <= 700) {
+    bottomToolsWrap.style.display = '';
+  }
+}
+
+function startGpsWatch() {
+  radarDenied = false; radarGpsAvailable = false;
+  if (!navigator.geolocation) { radarDenied = true; return; }
+  function fetchPos() {
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        radarUserLatLng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        radarGpsAvailable = true; radarDenied = false;
+        if (map && radarOriginMode === 'location') map.panTo(radarUserLatLng);
+      },
+      function() { radarDenied = true; radarGpsAvailable = false; },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 3000 }
+    );
+  }
+  fetchPos();
+  radarGpsInterval = setInterval(fetchPos, 5000);
+}
+
+function stopGpsWatch() {
+  if (radarGpsInterval !== null) { clearInterval(radarGpsInterval); radarGpsInterval = null; }
+  radarUserLatLng = null; radarGpsAvailable = false; radarDenied = false;
+}
+
+function syncRadarControls() {
+  var modeTrigger = radarPanel.querySelector('.radar-mode-trigger');
+  if (modeTrigger) modeTrigger.textContent = radarOriginMode === 'freeroam' ? 'Freeroam' : 'My Location';
+  var radiusTrigger = radarPanel.querySelector('.radar-radius-trigger');
+  if (radiusTrigger) radiusTrigger.textContent = radarRadiusKm + ' km';
+}
+
+function initRadarModeDropdown() {
+  var wrap = radarPanel.querySelector('.radar-mode-wrap');
+  if (!wrap) return;
+  var trigger = wrap.querySelector('.radar-mode-trigger');
+  var menu = wrap.querySelector('.radar-mode-menu');
+  if (!trigger || !menu) return;
+  function close() { menu.style.display = 'none'; }
+  var radiusMenu = radarPanel.querySelector('.radar-radius-menu');
+  trigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (menu.style.display !== 'none') { close(); return; }
+    if (radiusMenu) radiusMenu.style.display = 'none';
+    menu.style.display = '';
+    menu.querySelectorAll('button').forEach(function(b) {
+      b.classList.toggle('is-active', b.getAttribute('data-value') === radarOriginMode);
+    });
+  });
+  menu.querySelectorAll('button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var v = this.getAttribute('data-value');
+      if (v !== radarOriginMode) {
+        radarOriginMode = v;
+        trigger.textContent = v === 'freeroam' ? 'Freeroam' : 'My Location';
+        clearRadarPulseEffects();
+        showRadarLoading();
+        if (v === 'location') startGpsWatch(); else stopGpsWatch();
+        updateRadarResults();
+      }
+      close();
+    });
+  });
+  document.addEventListener('click', function(e) {
+    if (!wrap.contains(e.target)) close();
+  });
+}
+
+function initRadarRadiusDropdown() {
+  var wrap = radarPanel.querySelector('.radar-radius-wrap');
+  if (!wrap) return;
+  var trigger = wrap.querySelector('.radar-radius-trigger');
+  var menu = wrap.querySelector('.radar-radius-menu');
+  if (!trigger || !menu) return;
+  function close() { menu.style.display = 'none'; }
+  var modeMenu = radarPanel.querySelector('.radar-mode-menu');
+  trigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (menu.style.display !== 'none') { close(); return; }
+    if (modeMenu) modeMenu.style.display = 'none';
+    menu.style.display = '';
+    menu.querySelectorAll('button').forEach(function(b) {
+      b.classList.toggle('is-active', Number(b.getAttribute('data-value')) === radarRadiusKm);
+    });
+  });
+  menu.querySelectorAll('button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var v = Number(this.getAttribute('data-value'));
+      if (v !== radarRadiusKm) {
+        radarRadiusKm = v;
+        trigger.textContent = v + ' km';
+        clearRadarPulseEffects();
+        showRadarLoading();
+        updateRadarResults();
+      }
+      close();
+    });
+  });
+  document.addEventListener('click', function(e) {
+    if (!wrap.contains(e.target)) close();
+  });
+}
+
+function onRadarMapMove() {
+  if (radarOriginMode !== 'freeroam') return;
+  if (radarMoveTimeout) clearTimeout(radarMoveTimeout);
+  radarMoveTimeout = setTimeout(showRadarLoading, 50);
+}
+
+function showRadarLoading() {
+  var el = radarPanel.querySelector('.radar-panel-results');
+  if (el) el.innerHTML = '<div class="radar-loading"><div class="radar-sweep-mini"></div></div>';
+}
+
+function calculateNearestMarkers() {
+  if (!map || !spotMarkers.length) return [];
+  var origin = getRadarOrigin();
+  var visible = getVisibleMarkers();
+  var results = visible.map(function(m) {
+    return { marker: m, distanceKm: origin.distanceTo(m.getLatLng()) / 1000 };
+  }).sort(function(a, b) { return a.distanceKm - b.distanceKm; });
+  if (radarRadiusKm > 0) results = results.filter(function(r) { return r.distanceKm <= radarRadiusKm; });
+  return results;
+}
+
+function updateRadarResults() {
+  if (radarDenied && radarOriginMode === 'location') {
+    renderRadarPanel([]);
+    clearRadarPulseEffects();
+    return;
+  }
+  var results = calculateNearestMarkers();
+  radarModeResults = results;
+  renderRadarPanel(results);
+  updatePulseEffects(results.slice(0, 20));
+}
+
+function renderRadarPanel(results) {
+  var resultsEl = radarPanel.querySelector('.radar-panel-results');
+  var badgeEl = radarPanel.querySelector('.radar-count-badge');
+  if (!resultsEl) return;
+  if (radarDenied && radarOriginMode === 'location') {
+    if (badgeEl) badgeEl.textContent = '';
+    resultsEl.innerHTML = '<div class="radar-denied">Enable location access for My Location mode.</div>';
+    return;
+  }
+  if (badgeEl) badgeEl.textContent = results.length ? String(results.length) : '';
+  if (!results.length) { resultsEl.innerHTML = '<div class="radar-empty">No locations found</div>'; return; }
+  var html = '<div class="radar-list">';
+  var toShow = results.slice(0, 20);
+  for (var i = 0; i < toShow.length; i++) {
+    var r = toShow[i];
+    var name = escapeHtml(r.marker._spotName || 'Unnamed spot');
+    var dist = r.distanceKm < 1 ? (r.distanceKm * 1000).toFixed(0) + ' m' : r.distanceKm.toFixed(1) + ' km';
+    var ll = r.marker.getLatLng();
+    var mapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + ll.lat + ',' + ll.lng;
+    var dotColor = { confirmed: '#33c06d', risky: '#ef4f76', unsure: '#e7c74b' }[r.marker._spotClass] || '#a78bfa';
+    html += '<div class="radar-result' + (i === 0 ? ' is-nearest' : '') + '">' +
+      '<div class="radar-result-rank">' + (i + 1) + '</div>' +
+      '<div class="radar-result-info"><div class="radar-result-name"><span class="radar-spot-dot" style="background:' + dotColor + '"></span>' + name + '</div><div class="radar-result-dist">' + dist + '</div></div>' +
+      '<div class="radar-result-actions">' +
+      '<button type="button" class="radar-action-btn radar-dir-btn" data-url="' + escapeHtml(mapsUrl) + '" title="Directions"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11L11 5M7 5h4v4"/></svg></button>' +
+      '<button type="button" class="radar-action-btn radar-view-btn" data-index="' + i + '" title="View"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/><path d="M11 7v8M7 11h8"/></svg></button>' +
+      '</div></div>';
+  }
+  html += '</div>';
+  resultsEl.innerHTML = html;
+  resultsEl.querySelectorAll('.radar-view-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var rr = results[Number(btn.getAttribute('data-index'))];
+      if (rr && rr.marker) flyToMarker(rr.marker);
+    });
+  });
+  resultsEl.querySelectorAll('.radar-dir-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var url = btn.getAttribute('data-url');
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    });
+  });
+}
+
+function flyToMarker(marker) {
+  if (!marker || !map) return;
+  var ll = marker.getLatLng();
+  map.flyTo([ll.lat, ll.lng], 14, { duration: 0.8 });
+}
+
+function updatePulseEffects(results) {
+  clearRadarPulseEffects();
+  if (!results.length) return;
+  var origin = getRadarOrigin();
+  var maxDist = results[results.length - 1].distanceKm || 1;
+  if (radarRadiusKm > 0 && radarRadiusKm < maxDist) maxDist = radarRadiusKm;
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    var ll = r.marker.getLatLng();
+    var ratio = 1 - Math.min(r.distanceKm / maxDist, 1);
+    var radius = 30 + ratio * 120;
+    var fillOp = 0.1 + ratio * 0.18;
+    var strokeOp = 0.15 + ratio * 0.25;
+    radarPulseCircles.push(L.circle([ll.lat, ll.lng], {
+      radius: radius, color: i === 0 ? '#b0c4ff' : '#8fa3ff',
+      fillColor: i === 0 ? '#a0b8ff' : '#8fa3ff',
+      fillOpacity: fillOp, weight: i === 0 ? 1.5 : 1, opacity: strokeOp,
+      interactive: false, className: 'radar-pulse-ring'
+    }).addTo(map));
+  }
+  var nearest = results[0];
+  var nll = nearest.marker.getLatLng();
+  var nRatio = 1 - Math.min(nearest.distanceKm / maxDist, 1);
+  radarPriorityBubble = L.circle([nll.lat, nll.lng], {
+    radius: 40 + nRatio * 100, color: '#a8b7ff', fillColor: '#8fa3ff',
+    fillOpacity: 0.05, weight: 1.5, opacity: 0.35,
+    className: 'radar-priority-bubble', interactive: false
+  }).addTo(map);
+  radarScanRing = L.circle([origin.lat, origin.lng], {
+    radius: 2000, color: 'rgba(143,163,255,0.15)', fillColor: 'transparent',
+    fillOpacity: 0, weight: 1, opacity: 0.15,
+    interactive: false
+  }).addTo(map);
+}
+
+function clearRadarPulseEffects() {
+  radarPulseCircles.forEach(function(c) { if (map) map.removeLayer(c); });
+  radarPulseCircles = [];
+  if (radarPriorityBubble && map) { map.removeLayer(radarPriorityBubble); radarPriorityBubble = null; }
+  if (radarScanRing && map) { map.removeLayer(radarScanRing); radarScanRing = null; }
+  radarScanRingPhase = 0;
+}
+
+function animateScanRing() {
+  if (!radarScanRing || !map) return;
+  radarScanRingPhase += 0.025;
+  if (radarScanRingPhase > 1) radarScanRingPhase -= 1;
+  var t = (Math.sin(radarScanRingPhase * Math.PI * 2) + 1) / 2;
+  radarScanRing.setRadius(600 + t * 1600);
+  radarScanRing.setStyle({ opacity: 0.15 - t * 0.1 });
+}
+
+function positionRadarSlideout() {
+  var wrapRect = bottomToolsWrap.getBoundingClientRect();
+  var btnRect = radarModeToggleBtn.getBoundingClientRect();
+  radarSlideout.style.right = (window.innerWidth - wrapRect.left + 8) + 'px';
+  radarSlideout.style.top = Math.max(8, btnRect.top) + 'px';
+  radarSlideout.style.left = 'auto';
+}
+
+function closeRadarSlideout() {
+  if (!radarSlideoutOpen) return;
+  radarSlideoutOpen = false;
+  radarSlideout.classList.add('radar-slideout-closing');
+  radarSlideout.addEventListener('animationend', function handler() {
+    radarSlideout.removeEventListener('animationend', handler);
+    radarSlideout.style.display = 'none';
+    radarSlideout.classList.remove('radar-slideout-closing');
+  }, { once: true });
+}
+
+function openRadarSlideout() {
+  radarSlideoutOpen = true;
+  positionRadarSlideout();
+  radarSlideout.style.display = '';
+  radarSlideout.classList.remove('radar-slideout-closing');
+  var checkbox = document.getElementById('radarEnableCheck');
+  if (checkbox) checkbox.checked = radarModeEnabled;
+}
+
+radarModeToggleBtn.addEventListener('click', function(e) {
+  e.stopPropagation();
+  if (radarSlideoutOpen) closeRadarSlideout();
+  toggleRadarMode();
+});
+
+document.addEventListener('click', function(e) {
+  if (radarSlideoutOpen && !radarSlideout.contains(e.target) && !radarModeToggleBtn.contains(e.target)) closeRadarSlideout();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && radarSlideoutOpen) closeRadarSlideout();
+});
+
+document.addEventListener('change', function(e) {
+  if (e.target.id === 'radarEnableCheck') {
+    if (!radarModeEnabled && e.target.checked) toggleRadarMode();
+    else if (radarModeEnabled && !e.target.checked) toggleRadarMode();
+  }
+});
+
+window.addEventListener('beforeunload', function() { if (radarModeEnabled) disableRadarMode(); });
+
 const bottomToolsGroup = document.createElement('div');
 bottomToolsGroup.className = 'bottom-tools-group';
 bottomToolsGroup.appendChild(bottomToolsBubble);
@@ -1128,26 +1536,13 @@ filterPopover.innerHTML =
   '<label class="filter-row" data-class="default"><span class="filter-swatch" style="background:#a78bfa"></span><span>No Class</span><input type="checkbox" checked></label>' +
   '<button class="ctrl-popover-action filter-show-all">Show All</button>';
 
-const exportPopover = document.createElement('div');
-exportPopover.className = 'ctrl-popover bottom-export-popover';
-exportPopover.style.display = 'none';
-exportPopover.innerHTML =
-  '<div class="ctrl-popover-header">Export Data</div>' +
-  '<label class="export-row" data-key="profile"><span>Profile data</span><input type="checkbox" checked></label>' +
-  '<label class="export-row" data-key="spotName"><span>Spot names</span><input type="checkbox" checked></label>' +
-  '<label class="export-row" data-key="spotCoords"><span>Spot coordinates</span><input type="checkbox" checked></label>' +
-  '<label class="export-row" data-key="spotDesc"><span>Spot descriptions</span><input type="checkbox" checked></label>' +
-  '<div class="export-actions"><button class="ctrl-popover-action export-toggle">Select All</button><div class="export-download-wrap"><button class="ctrl-popover-action export-download">Download</button></div></div>';
-
 bottomToolsWrap.appendChild(bottomToolsGroup);
 bottomToolsWrap.appendChild(filterPopover);
-bottomToolsWrap.appendChild(exportPopover);
 document.body.appendChild(bottomToolsWrap);
 
 let bottomToolsOpen = false;
 let bottomToolsClosing = false;
 let filterPopoverOpen = false;
-let exportPopoverOpen = false;
 
 function applyFilters() {
   const checks = filterPopover.querySelectorAll('.filter-row input[type="checkbox"]');
@@ -1173,7 +1568,8 @@ function getVisibleMarkers() {
 }
 
 async function exportData(format = 'json') {
-  const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
+  const modal = document.getElementById('exportModal');
+  const checks = modal.querySelectorAll('.export-row input[type="checkbox"]');
   const selected = {};
   checks.forEach(cb => {
     const key = cb.closest('.export-row').getAttribute('data-key');
@@ -1273,7 +1669,6 @@ function toggleBottomToolsBubble() {
   } else {
     animateCloseBubble();
     if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
-    if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
   }
 }
 
@@ -1282,7 +1677,6 @@ function closeBottomTools() {
   bottomToolsOpen = false;
   animateCloseBubble();
   if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
-  if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
 }
 
 // Wire filter popover
@@ -1294,39 +1688,101 @@ filterPopover.querySelector('.filter-show-all').addEventListener('click', () => 
   applyFilters();
 });
 
-// Wire export popover
-const exportToggleBtn = exportPopover.querySelector('.export-toggle');
-exportToggleBtn.addEventListener('click', () => {
-  const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
-  const allChecked = Array.from(checks).every(cb => cb.checked);
-  checks.forEach(cb => { cb.checked = !allChecked; });
-  exportToggleBtn.textContent = allChecked ? 'Select All' : 'Deselect';
-});
-// Dropup for download format
-const exportDownloadWrap = exportPopover.querySelector('.export-download-wrap');
-const exportDownloadBtn = exportDownloadWrap.querySelector('.export-download');
+
+
+// Wire export modal
+const exportModal = document.getElementById('exportModal');
+if (exportModal) {
+const exportToggleBtn = exportModal.querySelector('.export-modal-toggle');
+const exportFormatBtn = exportModal.querySelector('.export-modal-download');
 const exportFormatDropup = document.createElement('div');
 exportFormatDropup.className = 'export-format-dropup';
 exportFormatDropup.style.display = 'none';
 exportFormatDropup.innerHTML =
   '<button class="export-format-option" data-format="json">Export as JSON (.json)</button>' +
   '<button class="export-format-option" data-format="txt">Export as TXT (.txt)</button>';
+const exportDownloadWrap = document.createElement('div');
+exportDownloadWrap.className = 'export-download-wrap';
+exportFormatBtn.parentNode.insertBefore(exportDownloadWrap, exportFormatBtn);
+exportDownloadWrap.appendChild(exportFormatBtn);
 exportDownloadWrap.appendChild(exportFormatDropup);
 
-exportDownloadBtn.addEventListener('click', (e) => {
+const exportArrow = exportFormatBtn.querySelector('.export-arrow');
+
+const exportModalBody = document.querySelector('.export-modal-body');
+const openExportFormatDropup = () => {
+  exportFormatDropup.classList.remove('export-format-dropup--closing');
+  exportFormatDropup.style.display = '';
+  if (exportArrow) exportArrow.classList.add('is-open');
+  if (exportModalBody) exportModalBody.classList.add('export-dropup-open');
+};
+const closeExportFormatDropup = (cb) => {
+  if (exportFormatDropup.style.display === 'none') { if (cb) cb(); return; }
+  exportFormatDropup.classList.add('export-format-dropup--closing');
+  if (exportModalBody) exportModalBody.classList.remove('export-dropup-open');
+  const onEnd = () => {
+    exportFormatDropup.removeEventListener('animationend', onEnd);
+    exportFormatDropup.style.display = 'none';
+    exportFormatDropup.classList.remove('export-format-dropup--closing');
+    if (exportArrow) exportArrow.classList.remove('is-open');
+    if (cb) cb();
+  };
+  exportFormatDropup.addEventListener('animationend', onEnd);
+};
+
+const closeExportModal = () => {
+  closeExportFormatDropup();
+  exportModal.classList.add('is-closing');
+  setTimeout(() => {
+    exportModal.style.display = 'none';
+    exportModal.classList.remove('is-closing');
+    document.body.style.overflow = '';
+  }, 250);
+};
+document.querySelector('.export-modal-backdrop').addEventListener('click', closeExportModal);
+document.querySelector('.export-modal-close').addEventListener('click', closeExportModal);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && exportModal.style.display === 'flex') closeExportModal();
+});
+document.addEventListener('click', (e) => {
+  if (e.target === exportModal) closeExportModal();
+});
+
+exportToggleBtn.addEventListener('click', () => {
+  const checks = exportModal.querySelectorAll('.export-row input[type="checkbox"]');
+  const allChecked = Array.from(checks).every(cb => cb.checked);
+  checks.forEach(cb => { cb.checked = !allChecked; });
+  exportToggleBtn.textContent = allChecked ? 'Select All' : 'Deselect';
+});
+
+exportFormatBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   const isOpen = exportFormatDropup.style.display !== 'none';
-  exportFormatDropup.style.display = isOpen ? 'none' : '';
+  if (isOpen) {
+    closeExportFormatDropup();
+  } else {
+    openExportFormatDropup();
+  }
 });
 
 exportFormatDropup.querySelectorAll('.export-format-option').forEach(opt => {
   opt.addEventListener('click', (e) => {
     e.stopPropagation();
     const format = opt.getAttribute('data-format');
-    exportFormatDropup.style.display = 'none';
-    exportData(format);
+    closeExportFormatDropup(() => exportData(format));
   });
 });
+
+bubbleExportBtn.addEventListener('click', () => {
+  if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
+  closeBottomTools();
+  exportModal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  const checks = exportModal.querySelectorAll('.export-row input[type="checkbox"]');
+  const allChecked = Array.from(checks).every(cb => cb.checked);
+  exportToggleBtn.textContent = allChecked ? 'Deselect' : 'Select All';
+});
+}
 
 function showPopover(popover) {
   popover.classList.remove('popover-closing');
@@ -1351,27 +1807,12 @@ function positionPopoverAbove(popover, button) {
 
 // Wire bubble buttons
 bubbleFilterBtn.addEventListener('click', () => {
-  if (exportPopoverOpen) { hidePopover(exportPopover); exportPopoverOpen = false; }
   filterPopoverOpen = !filterPopoverOpen;
   if (filterPopoverOpen) {
     positionPopoverAbove(filterPopover, bubbleFilterBtn);
     showPopover(filterPopover);
   } else {
     hidePopover(filterPopover);
-  }
-});
-
-bubbleExportBtn.addEventListener('click', () => {
-  if (filterPopoverOpen) { hidePopover(filterPopover); filterPopoverOpen = false; }
-  exportPopoverOpen = !exportPopoverOpen;
-  if (exportPopoverOpen) {
-    positionPopoverAbove(exportPopover, bubbleExportBtn);
-    showPopover(exportPopover);
-    const checks = exportPopover.querySelectorAll('.export-row input[type="checkbox"]');
-    const allChecked = Array.from(checks).every(cb => cb.checked);
-    exportToggleBtn.textContent = allChecked ? 'Deselect' : 'Select All';
-  } else {
-    hidePopover(exportPopover);
   }
 });
 
@@ -1533,11 +1974,16 @@ function runMapApp() {
       panel.appendChild(locateEl);
     }
 
-    // Settings gear
+    // Radar toggle
+    if (radarModeToggleBtn) {
+      panel.appendChild(radarModeToggleBtn);
+    }
+
+    // Settings gear lives inside the bottom-right tools drawer.
     if (window.__settingsBtn) {
       const sBtn = window.__settingsBtn;
       if (sBtn.parentNode) sBtn.parentNode.removeChild(sBtn);
-      panel.appendChild(sBtn);
+      bottomToolsBubble.appendChild(sBtn);
     }
 
     // Add spot
@@ -1545,6 +1991,7 @@ function runMapApp() {
       addSpotEl.parentNode && addSpotEl.parentNode.removeChild(addSpotEl);
       panel.appendChild(addSpotEl);
     }
+
     mapEl.appendChild(panel);
   }, 100);
 
@@ -1575,7 +2022,9 @@ function runMapApp() {
 
   // Map click handler
   map.on("click", async function (e) {
-    if (!canEditSpots() || !addMode) return;
+    if (!canEditSpots() || !addMode || addSpotProcessing) return;
+    addSpotProcessing = true;
+    addMode = false;
     const newMarker = L.marker(e.latlng, { draggable: true, icon: getSpotIcon('default') }).addTo(spotClusterGroup || map);
     newMarker._spotClass = 'default';
     newMarker._spotComments = [];
@@ -1643,6 +2092,12 @@ function runMapApp() {
         newMarker.setIcon(getSpotIcon(spotClass));
         reapplyMarkerScale(newMarker);
         newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images, spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
+        const pop = newMarker.getPopup();
+        const cb = pop._closeButton;
+        if (cb) cb.style.cssText = '';
+        const w = pop._wrapper;
+        if (w) w.classList.remove('is-editing');
+        pop.update();
         clearSpotsCache();
         upsertSpotSearchEntry(ref.id, name, newMarker);
         wrap.querySelector('#saveStatus').textContent = 'Saved!';
@@ -1653,6 +2108,7 @@ function runMapApp() {
         wrap.querySelector('#saveStatus').style.color = '#ffb6c3';
       }
     };
+    addSpotProcessing = false;
     addMode = false;
   });
 }
@@ -2214,7 +2670,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       ? `<a class="spot-maps-link" href="${googleMapsUrl}" target="_blank" rel="noopener noreferrer">View on Google Maps</a>`
       : '';
     const currentComments = Array.isArray(comments) ? comments : [];
-    const editButtonHtml = canEditSpots() ? '<button type="button" class="edit-spot-btn">Edit</button>' : '';
+    const editButtonHtml = '<button type="button" class="edit-spot-btn"' + (canEditSpots() ? '' : ' style="visibility:hidden"') + '>Edit</button>';
     const commentsCount = currentComments.length;
     const urlSet = new Set();
     if (imageUrl) urlSet.add(imageUrl);
@@ -2282,6 +2738,9 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         </div>
         <div class="spot-maps-link-wrap">${mapsLinkHtml}</div>
       </div>`;
+
+    const nameEl = wrap.querySelector('.spot-popup-name');
+    if (nameEl && name.length > 30) nameEl.classList.add('is-long');
 
     if (canEditSpots()) {
       const editBtn = wrap.querySelector('.edit-spot-btn');
@@ -2538,6 +2997,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         if (cb) cb.style.cssText = '';
         const w = pop._wrapper;
         if (w) w.classList.remove('is-editing');
+        pop.update();
       } catch (err) {
         loadingOverlay.style.display = 'none';
         wrap.querySelector('.edit-status').textContent = 'Error: ' + (err.code || err.message || String(err));

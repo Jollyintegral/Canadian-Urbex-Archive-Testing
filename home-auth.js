@@ -2,6 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
+import { applyTheme, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -78,6 +79,7 @@ function wireMenu() {
     sessionStorage.removeItem('guestMode');
     sessionStorage.removeItem('authSignedIn');
     sessionStorage.removeItem('userRole');
+    clearThemeCache();
     await signOut(auth);
     window.location.reload();
   };
@@ -102,12 +104,15 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     const role = await loadRole(user.uid);
     setAccountUi(user, role);
+    await loadUserTheme(db, user.uid);
   } else {
+    applyTheme('');
     const wrap = document.getElementById('homeAccountMenuWrap');
     const signInBtn = document.getElementById('homeHeaderSignInBtn');
     if (wrap) wrap.style.display = 'none';
     if (signInBtn) signInBtn.style.display = 'inline-flex';
   }
+  hidePageLoading();
 });
 
 wireMenu();

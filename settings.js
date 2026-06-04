@@ -2,6 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getFirestore, doc, getDoc, getDocFromServer, setDoc, serverTimestamp, collection, getDocs, addDoc, query, orderBy, limit, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getAuth, onAuthStateChanged, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
+import { applyTheme, loadUserTheme, saveThemePreference, getCurrentTheme, hidePageLoading, clearThemeCache } from './theme.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -90,6 +91,8 @@ function wireMenu() {
   }
   if (signOutBtn) signOutBtn.onclick = async () => {
     if (window.UrbexLoader) window.UrbexLoader.start();
+    clearThemeCache();
+    if (currentUser) try { sessionStorage.removeItem('urbex_profile_' + currentUser.uid); } catch (e) {}
     await signOut(auth);
     window.location.reload();
   };
@@ -126,11 +129,65 @@ function wireMobileMenu() {
   });
 }
 
+function cacheUserProfile(uid, data) {
+  if (!uid) return;
+  try { sessionStorage.setItem('urbex_profile_' + uid, JSON.stringify(data || {})); } catch (e) {}
+}
+
+function getCachedUserProfile(uid) {
+  if (!uid) return null;
+  try {
+    const raw = sessionStorage.getItem('urbex_profile_' + uid);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
 async function loadRole(uid) {
-  const snap = await getDoc(doc(db, 'users', uid));
-  currentUserDoc = snap.data() || null;
+  // Apply cached profile data instantly if available
+  const cached = getCachedUserProfile(uid);
+  if (cached) {
+    currentUserDoc = cached;
+  }
+
+  // Fetch fresh from Firestore in background
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    const fresh = snap.data() || null;
+    if (JSON.stringify(fresh) !== JSON.stringify(cached)) {
+      currentUserDoc = fresh;
+      cacheUserProfile(uid, fresh);
+    }
+  } catch (e) {
+    // Cache already applied — silently continue
+    if (!cached) {
+      currentUserDoc = null;
+    }
+  }
+
   const rawRole = (currentUserDoc || {}).role || 'visitor';
   return normalizeRole(rawRole);
+}
+
+function initSettingsThemeSelector() {
+  const cards = document.querySelectorAll('#settingsThemeGrid .theme-card');
+  if (!cards.length) return;
+  const currentTheme = getCurrentTheme();
+  const effectiveTheme = currentTheme === 'concrete' ? '' : currentTheme;
+  cards.forEach(card => {
+    const value = card.getAttribute('data-theme-value') || '';
+    card.classList.toggle('is-active', value === effectiveTheme);
+    card.addEventListener('click', async () => {
+      if (card.classList.contains('is-active')) return;
+      cards.forEach(c => c.classList.remove('is-active'));
+      card.classList.add('is-active');
+      applyTheme(value);
+      if (currentUser) {
+        showSaving('sas-profile');
+        await saveThemePreference(db, currentUser.uid, value);
+        showSaved('sas-profile');
+      }
+    });
+  });
 }
 
 function exitMobileDrillIn() {
@@ -183,9 +240,24 @@ function wireTabs() {
           });
         }
       } else {
-        panels.forEach((p) => {
-          p.classList.toggle('is-active', p.getAttribute('data-panel') === tab);
-        });
+        const container = document.querySelector('.settings-tabs-container');
+        const currentPanel = document.querySelector('.settings-tab-panel.is-active');
+        const newPanel = document.querySelector(`.settings-tab-panel[data-panel="${tab}"]`);
+
+        if (currentPanel && newPanel && currentPanel !== newPanel) {
+          container.style.height = currentPanel.offsetHeight + 'px';
+          currentPanel.classList.remove('is-active');
+          currentPanel.classList.add('slide-out');
+          setTimeout(() => {
+            currentPanel.classList.remove('slide-out');
+            newPanel.classList.add('is-active');
+            container.style.height = '';
+          }, 220);
+        } else {
+          panels.forEach((p) => {
+            p.classList.toggle('is-active', p.getAttribute('data-panel') === tab);
+          });
+        }
         exitMobileDrillIn();
       }
 
@@ -434,17 +506,110 @@ async function loadRoleDashboard() {
   roleDashboardLoaded = true;
 }
 
-async function saveSettings() {
-  if (!currentUser) return;
-  const saveBtn = document.getElementById('settingsSaveBtn');
+/* ── Auto-Save Helpers ── */
+/* ── Tooltip tap/click ── */
+function initTooltipClicks() {
+  let tooltipTimer = null;
+  let shownEl = null;
+  document.querySelectorAll('.settings-auto-save .sas-icon').forEach((icon) => {
+    icon.addEventListener('click', (e) => {
+      const parent = icon.closest('.settings-auto-save');
+      if (!parent || !parent.classList.contains('is-saved')) return;
+      if (parent.classList.contains('is-tooltip-shown')) {
+        parent.classList.remove('is-tooltip-shown');
+        if (tooltipTimer) { clearTimeout(tooltipTimer); tooltipTimer = null; }
+        shownEl = null;
+        return;
+      }
+      if (shownEl && shownEl !== parent) shownEl.classList.remove('is-tooltip-shown');
+      if (tooltipTimer) clearTimeout(tooltipTimer);
+      parent.classList.add('is-tooltip-shown');
+      shownEl = parent;
+      tooltipTimer = setTimeout(() => {
+        parent.classList.remove('is-tooltip-shown');
+        tooltipTimer = null;
+        shownEl = null;
+      }, 3000);
+    });
+  });
+}
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+const _dotTimers = {};
+
+function _startDots(el) {
+  let count = 0;
+  el.textContent = 'Saving';
+  const key = el.id || 'sas-text';
+  if (_dotTimers[key]) clearInterval(_dotTimers[key]);
+  _dotTimers[key] = setInterval(() => {
+    count = (count % 3) + 1;
+    el.textContent = 'Saving' + '.'.repeat(count);
+  }, 500);
+}
+
+function _stopDots(el) {
+  const key = el.id || 'sas-text';
+  if (_dotTimers[key]) { clearInterval(_dotTimers[key]); delete _dotTimers[key]; }
+}
+
+function showSaving(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  el.classList.remove('is-saved');
+  el.classList.add('is-saving', 'is-shown');
+  const text = el.querySelector('.sas-text');
+  if (text) _startDots(text);
+}
+
+function showSaved(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) return;
+  el.classList.remove('is-saving');
+  el.classList.add('is-saved');
+  const text = el.querySelector('.sas-text');
+  if (text) {
+    _stopDots(text);
+    text.textContent = 'All Changes Saved';
+    text.style.opacity = '';
+    setTimeout(() => {
+      text.style.opacity = '0';
+      setTimeout(() => { text.textContent = ''; text.style.opacity = ''; }, 300);
+    }, 3000);
+  }
+}
+
+function initAutoSave() {
   const displayNameInput = document.getElementById('settingsDisplayNameInput');
   const bioInput = document.getElementById('settingsProfileBioInput');
-  if (!displayNameInput) return;
+
+  const doSave = debounce(async () => {
+    showSaving('sas-account');
+    showSaving('sas-profile');
+    await saveSettings();
+    showSaved('sas-account');
+    showSaved('sas-profile');
+  }, 600);
+
+  if (displayNameInput) displayNameInput.addEventListener('input', doSave);
+  if (bioInput) bioInput.addEventListener('input', doSave);
+}
+
+async function saveSettings() {
+  if (!currentUser) return false;
+  const displayNameInput = document.getElementById('settingsDisplayNameInput');
+  const bioInput = document.getElementById('settingsProfileBioInput');
+  if (!displayNameInput) return false;
   const nextName = (displayNameInput.value || '').trim();
   const nextBio = bioInput ? (bioInput.value || '').trim() : '';
-  setStatus('Saving...');
   try {
-    if (saveBtn) saveBtn.disabled = true;
     await updateProfile(currentUser, { displayName: nextName });
     const selfRef = doc(db, 'users', currentUser.uid);
     await setDoc(selfRef, {
@@ -460,20 +625,19 @@ async function saveSettings() {
       console.warn('Settings save mismatch:', { nextName, persistedName, nextBio, persistedBio });
     }
     currentUser = auth.currentUser;
+    currentUserDoc = { ...(currentUserDoc || {}), displayName: nextName, bio: nextBio };
+    cacheUserProfile(currentUser.uid, currentUserDoc);
     setAccountUi(currentUser, currentRole);
-    setStatus('Saved.');
+    return true;
   } catch (err) {
     setStatus('Save failed: ' + (err.code || err.message || String(err)), true);
-  } finally {
-    if (saveBtn) saveBtn.disabled = false;
+    return false;
   }
 }
 
 function wireForm() {
-  const saveBtn = document.getElementById('settingsSaveBtn');
   const backBtn = document.getElementById('settingsBackBtn');
   const returnUrl = getSettingsReturnUrl();
-  if (saveBtn) saveBtn.onclick = saveSettings;
   if (backBtn) backBtn.onclick = () => {
     if (window.UrbexLoader) window.UrbexLoader.start();
     window.location.href = returnUrl;
@@ -488,12 +652,15 @@ function wireForm() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    applyTheme('');
+    hidePageLoading();
     if (window.UrbexLoader) window.UrbexLoader.start();
     window.location.href = 'map.html';
     return;
   }
   currentUser = user;
   currentRole = await loadRole(user.uid);
+  await loadUserTheme(db, user.uid);
   syncRoleDashboardVisibility();
   const displayNameInput = document.getElementById('settingsDisplayNameInput');
   const emailInput = document.getElementById('settingsEmailInput');
@@ -502,9 +669,17 @@ onAuthStateChanged(auth, async (user) => {
   const bioInput = document.getElementById('settingsProfileBioInput');
   if (bioInput) bioInput.value = (currentUserDoc && currentUserDoc.bio) ? currentUserDoc.bio : '';
   setAccountUi(user, currentRole);
+  initSettingsThemeSelector();
+  hidePageLoading();
+  ['sas-account', 'sas-profile', 'sas-roles'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('is-saved', 'is-shown');
+  });
 });
 
 wireMenu();
 wireMobileMenu();
 wireForm();
 wireTabs();
+initAutoSave();
+initTooltipClicks();
