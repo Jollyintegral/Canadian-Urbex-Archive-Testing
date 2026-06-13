@@ -153,6 +153,14 @@ header .top-nav-link {
 .leaflet-container a.leaflet-popup-close-button {
   display: none !important;
 }
+.spot-popup-loading {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+}
 .spot-marker-active {
   filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.8));
 }
@@ -865,6 +873,31 @@ header .top-nav-link {
   .location-card-photo-thumb {
     width: 68px;
     height: 52px;
+  }
+  .location-card-header {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .location-card-body {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .location-card-meta {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .location-card-actions-bar {
+    gap: 4px;
+    padding-bottom: 12px;
+  }
+  .location-card-action-btn-inline {
+    min-height: 28px;
+    padding: 5px 3px;
+    font-size: 11px;
+  }
+  .location-card-desc-preview {
+    margin-left: 12px;
+    margin-right: 12px;
   }
 }
 
@@ -3988,7 +4021,8 @@ header {
     cursor: pointer;
   }
   /* Hide desktop bell on mobile, show only in drawer */
-  .notif-bell-container { display: none !important; }
+  .notif-bell-container { position: static; }
+  .notif-bell-container > .notif-bell-btn { display: none !important; }
   .notif-mobile-btn {
     border: 1px solid rgba(var(--border-soft-rgb), 0.4);
     background: rgba(var(--bg-control-rgb), 0.85);

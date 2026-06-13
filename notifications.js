@@ -71,11 +71,22 @@ export function initNotificationsUI(db, currentUser, userRole) {
       mobileBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
+        const open = panel.style.display === 'block';
+        if (open) {
+          panel.style.display = 'none';
+          return;
+        }
+        // Close the mobile drawer first
+        const toggle = document.querySelector('.mobile-menu-button');
+        if (toggle && toggle.classList.contains('is-active')) toggle.click();
+        // Show notifications panel (same as desktop bell)
+        panel.style.display = 'block';
         if (!notifUnsubscribe) {
           startListener(db, currentUser.uid);
           cleanupExpiredNotifications(db, currentUser.uid);
         }
-        showMobileNotifications(db, currentUser.uid);
+        renderNotificationsPanel(panel);
+        markAllRead(db, currentUser.uid);
       });
     }
   }

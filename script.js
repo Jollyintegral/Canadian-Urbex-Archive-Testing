@@ -1950,6 +1950,17 @@ function runMapApp() {
     const c = map.getCenter();
     localStorage.setItem('cua_map_pos', JSON.stringify([c.lat, c.lng, map.getZoom()]));
   });
+  map.on('movestart', () => {
+    const drawer = document.getElementById('global-more-drawer');
+    if (drawer && drawer.style.display !== 'none') {
+      drawer.classList.add('is-closing');
+      drawer.addEventListener('animationend', function onEnd() {
+        drawer.removeEventListener('animationend', onEnd);
+        drawer.style.display = 'none';
+        drawer.classList.remove('is-closing');
+      }, { once: true });
+    }
+  });
 
    // Street
   const street = L.tileLayer(
@@ -2961,12 +2972,6 @@ function createSpotPopup({ marker, spotId, name, desc, images = [], spotClass, m
         <div class="location-card-action-btn-inline location-card-expand-trigger" data-action="expand">
           Details
         </div>
-        <div class="location-card-action-btn-inline" data-action="directions">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11L11 5M7 5h4v4"/></svg> Directions
-        </div>
-        <div class="location-card-action-btn-inline" data-action="maps-pin">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1C5.2 1 3 3.2 3 6c0 3.5 5 9 5 9s5-5.5 5-9c0-2.8-2.2-5-5-5z"/><circle cx="8" cy="6" r="1.5"/></svg> Maps
-        </div>
       </div>
     </div>`;
 
@@ -3163,22 +3168,8 @@ function createSpotPopup({ marker, spotId, name, desc, images = [], spotClass, m
 
     // ── Comments button opens comments panel ──
     const commentsTrigger = wrap.querySelector('.location-card-actions-bar [data-action="comments"]');
+    const photosTrigger2 = wrap.querySelector('.location-card-actions-bar [data-action="photos"]');
     if (commentsTrigger) {
-    photosTrigger = wrap.querySelector('.location-card-actions-bar [data-action="photos"]');
-    dirTrigger = wrap.querySelector('.location-card-actions-bar [data-action="directions"]');
-    mapsPinTrigger = wrap.querySelector('.location-card-actions-bar [data-action="maps-pin"]');
-    if (dirTrigger) {
-      dirTrigger.onclick = e => {
-        e.stopPropagation();
-        window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
-      };
-    }
-    if (mapsPinTrigger) {
-      mapsPinTrigger.onclick = e => {
-        e.stopPropagation();
-        window.open(`https://www.google.com/maps?q=${spotLatLng.lat},${spotLatLng.lng}`, '_blank', 'noopener,noreferrer');
-      };
-    }
       commentsTrigger.onclick = e => {
         e.stopPropagation();
         showComments();
