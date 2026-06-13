@@ -833,9 +833,9 @@ header .top-nav-link {
     max-width: 100vw !important;
   }
   .location-card {
-    width: 100vw;
-    max-width: 100vw;
-    border-radius: 20px 20px 0 0;
+    width: 94vw;
+    max-width: 94vw;
+    border-radius: 16px 16px 0 0;
     box-shadow: 0 -4px 32px rgba(0,0,0,0.5);
     animation: sheet-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     transform-origin: bottom center;
@@ -854,50 +854,90 @@ header .top-nav-link {
     height: 4px;
     border-radius: 2px;
     background: rgba(var(--border-soft-rgb), 0.3);
-    margin: 10px auto 0;
-    position: absolute;
-    top: 0;
+    top: 6px;
     left: 50%;
     margin-left: -18px;
+    position: absolute;
     z-index: 3;
   }
   .location-card-header {
-    padding-top: 10px;
+    padding: 12px 10px 0;
   }
   .location-card-name {
-    font-size: clamp(15px, 4vw, 18px);
+    font-size: 14px;
+  }
+  .location-card-subtitle {
+    font-size: 10px;
   }
   .leaflet-popup-content-wrapper {
-    border-radius: 20px 20px 0 0 !important;
+    border-radius: 16px 16px 0 0 !important;
   }
   .location-card-photo-thumb {
-    width: 68px;
-    height: 52px;
-  }
-  .location-card-header {
-    padding-left: 10px;
-    padding-right: 10px;
+    width: 54px;
+    height: 40px;
   }
   .location-card-body {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding: 0 10px 0;
   }
   .location-card-meta {
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .location-card-actions-bar {
     gap: 4px;
-    padding-bottom: 12px;
+    margin-bottom: 6px;
   }
-  .location-card-action-btn-inline {
-    min-height: 28px;
-    padding: 5px 3px;
+  .location-card-meta-value {
     font-size: 11px;
   }
+  .location-card-meta-label {
+    font-size: 10px;
+  }
+  .location-card-actions-bar {
+    gap: 3px;
+    padding-bottom: 10px;
+  }
+  .location-card-action-btn-inline {
+    min-height: 24px;
+    padding: 4px 2px;
+    font-size: 10px;
+    gap: 2px;
+  }
+  .location-card-action-btn {
+    width: 24px;
+    height: 24px;
+  }
   .location-card-desc-preview {
-    margin-left: 12px;
-    margin-right: 12px;
+    font-size: 11px;
+    margin: 0 10px 0 12px;
+    top: -8px;
+    max-height: 70px;
+  }
+  .location-card-title-row {
+    padding-right: 30px;
+    padding-top: 2px;
+    gap: 4px;
+  }
+  .location-card-actions {
+    top: 8px;
+    right: 6px;
+    gap: 2px;
+  }
+  .location-card-photos-content {
+    padding: 4px 10px 6px 12px;
+  }
+  .location-card-details-content,
+  .location-card-comments-content {
+    padding: 4px 10px 6px 12px;
+  }
+  .location-card-full-desc {
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .location-card-edit-actions {
+    justify-content: center;
+  }
+  .location-card-edit-save,
+  .location-card-edit-delete {
+    height: 32px;
+    padding: 0 14px;
+    font-size: 12px;
   }
 }
 
@@ -4021,8 +4061,7 @@ header {
     cursor: pointer;
   }
   /* Hide desktop bell on mobile, show only in drawer */
-  .notif-bell-container { position: static; }
-  .notif-bell-container > .notif-bell-btn { display: none !important; }
+  .notif-bell-container { display: none !important; }
   .notif-mobile-btn {
     border: 1px solid rgba(var(--border-soft-rgb), 0.4);
     background: rgba(var(--bg-control-rgb), 0.85);
