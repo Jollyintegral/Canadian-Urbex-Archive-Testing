@@ -3,6 +3,7 @@ import { getFirestore, doc, getDoc, getDocFromServer, setDoc, serverTimestamp, c
 import { getAuth, onAuthStateChanged, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
 import { applyTheme, loadUserTheme, saveThemePreference, getCurrentTheme, hidePageLoading, clearThemeCache } from './theme.js';
+import { initNotificationsUI, notifyRoleChange } from './notifications.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -149,6 +150,12 @@ async function loadRole(uid) {
     currentUserDoc = cached;
   }
 
+  // Skip Firestore if already fetched once this session
+  const fetchedFlag = 'cua_user_fetched_' + uid;
+  if (sessionStorage.getItem(fetchedFlag)) {
+    return normalizeRole((currentUserDoc || {}).role || 'visitor');
+  }
+
   // Fetch fresh from Firestore in background
   try {
     const snap = await getDoc(doc(db, 'users', uid));
@@ -157,6 +164,7 @@ async function loadRole(uid) {
       currentUserDoc = fresh;
       cacheUserProfile(uid, fresh);
     }
+    sessionStorage.setItem(fetchedFlag, '1');
   } catch (e) {
     // Cache already applied — silently continue
     if (!cached) {
@@ -280,14 +288,31 @@ function canManageRoles() {
   return currentRole === 'owner';
 }
 
+function canAccessDevOptions() {
+  return currentRole === 'admin' || currentRole === 'owner';
+}
+
 function syncRoleDashboardVisibility() {
   const ownerOnly = Array.from(document.querySelectorAll('[data-owner-only="true"]'));
+  const adminOnly = Array.from(document.querySelectorAll('[data-admin-only="true"]'));
   const isOwner = currentRole === 'owner';
+  const isAdmin = canAccessDevOptions();
+  
   ownerOnly.forEach((el) => {
     el.style.display = isOwner ? '' : 'none';
   });
+  adminOnly.forEach((el) => {
+    el.style.display = isAdmin ? '' : 'none';
+  });
+  
   const activeOwnerPanel = document.querySelector('.settings-tab-panel.is-active[data-owner-only="true"]');
+  const activeAdminPanel = document.querySelector('.settings-tab-panel.is-active[data-admin-only="true"]');
+  
   if (!isOwner && activeOwnerPanel) {
+    const accountBtn = document.querySelector('.settings-nav-item[data-tab="account"]');
+    if (accountBtn) accountBtn.click();
+  }
+  if (!isAdmin && activeAdminPanel) {
     const accountBtn = document.querySelector('.settings-nav-item[data-tab="account"]');
     if (accountBtn) accountBtn.click();
   }
@@ -334,6 +359,8 @@ async function updateUserRole(targetUid, targetEmail, previousRole, nextRole) {
   } catch (auditErr) {
     console.warn('Role audit log failed:', auditErr);
   }
+
+  notifyRoleChange(db, targetUid, cleanRole, currentUser.uid).catch(() => {});
 }
 
 async function deleteAuditEntry(auditId) {
@@ -383,6 +410,12 @@ function wireRoleSaveButtons(users) {
         await updateUserRole(uid, user.email || '', user.role || 'visitor', sel.value);
         roleUsersCache = null;
         roleAuditCache = null;
+        if (uid === currentUser.uid) {
+          sessionStorage.setItem('userRole', normalizeRole(sel.value));
+          sessionStorage.removeItem('cua_user_fetched_' + uid);
+          currentRole = normalizeRole(sel.value);
+          setAccountUi(currentUser, currentRole);
+        }
         setStatus('Role updated successfully.');
         await loadRoleDashboard();
       } catch (err) {
@@ -635,6 +668,128 @@ async function saveSettings() {
   }
 }
 
+async function exportFirestoreDatabase() {
+  // Re-fetch role from Firestore to prevent console variable manipulation
+  var verifiedRole = await loadRole(currentUser.uid);
+  if (verifiedRole !== 'admin' && verifiedRole !== 'owner') {
+    console.error('Unauthorized export attempt');
+    throw new Error('Access Denied: You do not have permission to export database.');
+  }
+
+  const collectionsToExport = ['spots', 'users', 'role_audit'];
+  var exportData = { collections: {}, exportedAt: new Date().toISOString(), exportedBy: currentUser.uid };
+
+  // Show progress
+  var progressEl = document.getElementById('devExportProgress');
+  var progressFill = document.getElementById('devProgressFill');
+  var progressTotal = document.getElementById('devProgressTotal');
+  var progressCollections = document.getElementById('devProgressCollections');
+  if (progressEl) progressEl.style.display = 'block';
+  if (progressTotal) progressTotal.textContent = String(collectionsToExport.length);
+
+  for (var i = 0; i < collectionsToExport.length; i++) {
+    var colName = collectionsToExport[i];
+    if (progressCollections) progressCollections.textContent = String(i + 1);
+    try {
+      var snap = await getDocs(collection(db, colName));
+      var docs = [];
+      snap.forEach(function(d) {
+        docs.push({ id: d.id, data: d.data() });
+      });
+      exportData.collections[colName] = docs;
+    } catch(e) {
+      console.warn('Could not export collection "' + colName + '":', e.message);
+      exportData.collections[colName] = [];
+    }
+    // Update progress fill
+    if (progressFill) progressFill.style.width = ((i + 1) / collectionsToExport.length * 100) + '%';
+  }
+
+  return exportData;
+}
+
+function downloadJSON(data, filename) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function wireDevOptionsButton() {
+  const btn = document.getElementById('devExportBtn');
+  const statusEl = document.getElementById('devExportStatus');
+  const denyPanel = document.getElementById('devAccessDenied');
+  
+  if (!btn) return;
+
+  // Initial visibility check
+  if (!canAccessDevOptions()) {
+    btn.style.display = 'none';
+    if (denyPanel) denyPanel.style.display = 'block';
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    // Re-verify role from Firestore before proceeding (prevents console bypass)
+    var verifiedRole = await loadRole(currentUser.uid);
+    if (verifiedRole !== 'admin' && verifiedRole !== 'owner') {
+      if (statusEl) statusEl.textContent = 'Access Denied';
+      if (statusEl) statusEl.className = 'dev-export-status error';
+      if (denyPanel) denyPanel.style.display = 'block';
+      btn.style.display = 'none';
+      return;
+    }
+
+    // Show confirmation
+    const confirmed = confirm(
+      'Export all Firestore collections?\n\n' +
+      'This will download a complete database backup including all users, spots, roles, and other data.\n\n' +
+      'Make sure to store this file securely and only share with authorized administrators.'
+    );
+
+    if (!confirmed) return;
+
+    btn.disabled = true;
+    if (statusEl) {
+      statusEl.textContent = 'Exporting...';
+      statusEl.className = 'dev-export-status';
+    }
+
+    try {
+      const data = await exportFirestoreDatabase();
+      
+      var d = new Date();
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      const filename = 'cua-firestore-export-' + y + '-' + m + '-' + day + '.json';
+      
+      downloadJSON(data, filename);
+      
+      if (statusEl) {
+        statusEl.textContent = `✓ Export successful: ${filename}`;
+        statusEl.className = 'dev-export-status success';
+      }
+      
+      console.log('Database export completed:', data);
+    } catch (err) {
+      if (statusEl) {
+        statusEl.textContent = `✗ Export failed: ${err.message}`;
+        statusEl.className = 'dev-export-status error';
+      }
+      console.error('Export error:', err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function wireForm() {
   const backBtn = document.getElementById('settingsBackBtn');
   const returnUrl = getSettingsReturnUrl();
@@ -661,6 +816,7 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   currentRole = await loadRole(user.uid);
   await loadUserTheme(db, user.uid);
+  initNotificationsUI(db, user, currentRole);
   syncRoleDashboardVisibility();
   const displayNameInput = document.getElementById('settingsDisplayNameInput');
   const emailInput = document.getElementById('settingsEmailInput');
@@ -675,6 +831,7 @@ onAuthStateChanged(auth, async (user) => {
     const el = document.getElementById(id);
     if (el) el.classList.add('is-saved', 'is-shown');
   });
+  wireDevOptionsButton();
 });
 
 wireMenu();

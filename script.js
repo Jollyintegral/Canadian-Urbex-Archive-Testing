@@ -1,7 +1,7 @@
 // --- Firebase (Firestore for storing spots) ---
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { 
-  getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, getDoc, setDoc
+  getFirestore, collection, addDoc, getDocs, serverTimestamp, doc, updateDoc, getDoc, setDoc, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { applyTheme, getCurrentTheme, saveThemePreference, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
@@ -14,6 +14,8 @@ import {
   signInAnonymously
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
+import { initNotificationsUI, notifyNewSpot, notifyCommentDeleted } from './notifications.js';
+import { initReportButton } from './reports.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -263,7 +265,7 @@ function addCoordinateSearchControl() {
       const query = input.value.trim();
       if (!query) { clearResults(); error.textContent = ''; return; }
 
-      const parsed = parseCoordinateQuery(query);
+      const parsed = parseCoordinateInput(query);
       if (parsed) {
         clearResults();
         error.textContent = '';
@@ -462,9 +464,10 @@ function renderSpotData(spotId, d) {
   m._spotComments = spotComments;
   m._spotName = spotName;
   m._spotDesc = d.description || '';
-  m._spotImageUrl = d.imageUrl || '';
-  m._spotImages = d.images || [];
+  m._spotImages = [d.imageUrl, ...(d.images || [])].filter(Boolean);
   m._spotMinRole = minRole;
+  m._spotAddedBy = d.addedBy || null;
+  m._spotCreatedAt = d.createdAt || null;
   m.bindPopup('<div class="spot-popup-loading">Loading...</div>', { minWidth: 220 });
   const scaleIcon = (el, on) => {
     if (on) {
@@ -494,12 +497,13 @@ function renderSpotData(spotId, d) {
       spotId: m._spotId,
       name: m._spotName || 'Unnamed spot',
       desc: m._spotDesc || '',
-      imageUrl: m._spotImageUrl || '',
       images: m._spotImages || [],
       spotClass: m._spotClass || 'default',
       minRole: m._spotMinRole || 'visitor',
       comments: m._spotComments || [],
-      editMode: false
+      editMode: false,
+      addedBy: m._spotAddedBy || null,
+      createdAt: m._spotCreatedAt || null
     }));
   });
   m.on('popupclose', () => {
@@ -556,6 +560,11 @@ let addMode = false;
 let addSpotProcessing = false;
 
 async function ensureUserRoleDoc(user) {
+  const fetchedFlag = 'cua_user_fetched_' + user.uid;
+  const cachedRole = sessionStorage.getItem('userRole');
+  if (cachedRole && normalizeRole(cachedRole) !== 'visitor' && cachedRole !== '' && sessionStorage.getItem(fetchedFlag)) {
+    return normalizeRole(cachedRole);
+  }
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -566,6 +575,7 @@ async function ensureUserRoleDoc(user) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     }, { merge: true });
+    sessionStorage.setItem(fetchedFlag, '1');
     return 'member';
   }
   const data = snap.data() || {};
@@ -574,6 +584,7 @@ async function ensureUserRoleDoc(user) {
     displayName: user.displayName || data.displayName || '',
     updatedAt: serverTimestamp()
   }, { merge: true });
+  sessionStorage.setItem(fetchedFlag, '1');
   return normalizeRole(data.role || 'member');
 }
 
@@ -789,6 +800,8 @@ function initAuthGate() {
       sessionStorage.setItem('userRole', normalizeRole(userRole));
       setSignedInUserUi(user, userRole);
       updateAccountMenuUi(user, userRole);
+      initNotificationsUI(db, user, userRole);
+      initReportButton(db, user);
       if (signInBtn) signInBtn.style.display = 'none';
       if (signOutBtn) signOutBtn.style.display = 'inline-flex';
       if (gateEl) gateEl.style.display = 'none';
@@ -798,17 +811,21 @@ function initAuthGate() {
         loadSpots();
         refreshAddSpotControl();
       }
+      backfillSpotAddedBy();
       hidePageLoading();
     } catch (error) {
       userRole = 'visitor';
       await loadUserTheme(db, user?.uid);
       setSignedInUserUi(user, userRole);
       updateAccountMenuUi(user, userRole);
+      initNotificationsUI(db, user, userRole);
+      initReportButton(db, user);
       setAuthStatus('Could not load your role. Defaulting to visitor.', true);
       if (signInBtn) signInBtn.style.display = 'none';
       if (signOutBtn) signOutBtn.style.display = 'inline-flex';
       if (gateEl) gateEl.style.display = 'none';
       if (!map) { runMapApp(); refreshAddSpotControl(); }
+      backfillSpotAddedBy();
       hidePageLoading();
     }
   });
@@ -1129,6 +1146,9 @@ bubbleExportBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill
 bottomToolsBubble.appendChild(bubbleFilterBtn);
 bottomToolsBubble.appendChild(bubbleExportBtn);
 
+// ── Abandonment Scanner ──
+
+
 // ── Radar Mode ──
 let radarModeEnabled = false;
 let radarModeInterval = null;
@@ -1152,7 +1172,7 @@ let radarDenied = false;
 
 const radarModeToggleBtn = document.createElement('button');
 radarModeToggleBtn.type = 'button';
-radarModeToggleBtn.className = 'ctrl-btn';
+radarModeToggleBtn.className = 'ctrl-btn radar-mode-toggle-btn';
 radarModeToggleBtn.title = 'Radar Mode';
 radarModeToggleBtn.setAttribute('aria-label', 'Radar Mode');
 radarModeToggleBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="2"/><path d="M12 12l6-6"/><path d="M17 6h1v1"/></svg>';
@@ -1261,6 +1281,8 @@ function syncRadarControls() {
   var radiusTrigger = radarPanel.querySelector('.radar-radius-trigger');
   if (radiusTrigger) radiusTrigger.textContent = radarRadiusKm + ' km';
 }
+
+// ── Radar Dropdowns ──
 
 function initRadarModeDropdown() {
   var wrap = radarPanel.querySelector('.radar-mode-wrap');
@@ -1843,7 +1865,7 @@ layersPopover.innerHTML =
   '<div class="ctrl-popover-header">Map Layers</div>' +
   '<label class="layer-row" data-layer="street"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/><path d="M1.5 5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13"/></svg></span><span>Street Map</span><span class="layer-radio"></span></label>' +
   '<label class="layer-row" data-layer="satellite"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="3"/><path d="M8 2v2.5M8 11.5V14M2 8h2.5M11.5 8H14M3.7 3.7l1.7 1.7M10.6 10.6l1.7 1.7M3.7 12.3l1.7-1.7M10.6 5.4l1.7-1.7"/></svg></span><span>Satellite</span><span class="layer-radio"></span></label>' +
-  '<label class="layer-row" data-layer="hybrid"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 8.5l6.5 4 6.5-4M1.5 5.5l6.5 4 6.5-4M8 1.5L14.5 5.5 8 9.5 1.5 5.5z"/></svg></span><span>Hybrid</span><span class="layer-radio"></span></label>';
+  '<label class="layer-row" data-layer="hybrid"><span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 8.5l6.5 4 6.5-4M1.5 5.5l6.5 4 6.5-4M8 1.5L14.5 5.5 8 9.5 1.5 5.5z"/></svg></span><span>Hybrid<span class="layer-info-trigger" data-tooltip="⚠️ Mode not performance friendly">ⓘ</span></span><span class="layer-radio"></span></label>';
 
 let layersPopoverOpen = false;
 let currentLayerName = null;
@@ -1882,6 +1904,20 @@ layersPopover.querySelectorAll('.layer-row').forEach(row => {
   });
 });
 layersBtn.addEventListener('click', toggleLayersPopover);
+
+// Layer info tooltip toggle (mobile + desktop)
+document.addEventListener('click', function(e) {
+  var trigger = e.target.closest('.layer-info-trigger');
+  var openTrigger = document.querySelector('.layer-info-trigger.is-open');
+  if (trigger) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (openTrigger && openTrigger !== trigger) openTrigger.classList.remove('is-open');
+    trigger.classList.toggle('is-open');
+  } else if (openTrigger && !openTrigger.contains(e.target)) {
+    openTrigger.classList.remove('is-open');
+  }
+});
 document.addEventListener('click', (e) => {
   if (layersPopoverOpen && !layersPopover.contains(e.target) && e.target !== layersBtn && !layersBtn.contains(e.target)) {
     layersPopoverOpen = false;
@@ -1893,7 +1929,19 @@ function runMapApp() {
   if (!window.L) throw new Error('Leaflet failed to load. Check internet or blocked unpkg.com');
 
   // Create the map
-  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([53.5444, -113.4909], 12);
+  let initLat = 53.5444, initLng = -113.4909, initZoom = 12;
+  const savedPos = localStorage.getItem('cua_map_pos');
+  if (savedPos) {
+    try {
+      const p = JSON.parse(savedPos);
+      if (Array.isArray(p) && p.length === 3) { initLat = p[0]; initLng = p[1]; initZoom = p[2]; }
+    } catch {}
+  }
+  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([initLat, initLng], initZoom);
+  map.on('moveend', () => {
+    const c = map.getCenter();
+    localStorage.setItem('cua_map_pos', JSON.stringify([c.lat, c.lng, map.getZoom()]));
+  });
 
    // Street
   const street = L.tileLayer(
@@ -2031,34 +2079,92 @@ function runMapApp() {
     const wrap = document.createElement('div');
     wrap.className = 'location-card is-creating';
     wrap.innerHTML = `<div class="location-card-body">
-      <div class="location-card-create-title">New Spot</div>
-      <select id="spotClass" class="location-card-edit-class">
-        <option value="default">No Class</option>
-        <option value="confirmed">&#9989; Confirmed</option>
-        <option value="risky">&#128308; Risky</option>
-        <option value="unsure">&#128993; Unsure</option>
-      </select>
-      <select id="spotMinRole" class="location-card-edit-class">
-        <option value="visitor">Visitor+</option>
-        <option value="member">Member+</option>
-        <option value="editor">Editor+</option>
-      </select>
-      <input type="text" id="spotName" class="location-card-edit-name" placeholder="Name">
-      <input type="file" id="spotImage" accept="image/*" multiple style="display:none">
-      <div id="spotDesc" class="location-card-edit-desc" contenteditable></div>
-      <div class="location-card-edit-actions">
-        <button type="button" id="saveSpotBtn" class="location-card-edit-save">Save to cloud</button>
+      <div class="edit-section-main">
+        <div class="edit-nav-btn-row">
+          <button type="button" class="edit-nav-btn" data-section="info">Info</button>
+          <button type="button" class="edit-nav-btn" data-section="desc">Desc</button>
+        </div>
+        <div class="location-card-edit-actions">
+          <button type="button" id="saveSpotBtn" class="location-card-edit-save">Save to cloud</button>
+          <button type="button" id="cancelSpotBtn" class="location-card-edit-delete">Cancel</button>
+        </div>
+        <p id="saveStatus" class="location-card-edit-status"></p>
       </div>
-      <p id="saveStatus" class="location-card-edit-status"></p>
+      <div class="edit-section-info">
+        <input type="text" id="spotName" class="location-card-edit-name" placeholder="Name">
+        <div class="edit-dropdown-wrap">
+          <button type="button" class="edit-dropdown-trigger" data-type="class">No Class</button>
+          <div class="edit-dropdown-menu" style="display:none">
+            <button type="button" data-value="default">No Class</button>
+            <button type="button" data-value="confirmed">✅ Confirmed</button>
+            <button type="button" data-value="risky">🔴 Risky</button>
+            <button type="button" data-value="unsure">🟡 Unsure</button>
+          </div>
+          <select id="spotClass" class="location-card-edit-class" style="display:none">
+            <option value="default">No Class</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="risky">Risky</option>
+            <option value="unsure">Unsure</option>
+          </select>
+        </div>
+        <div class="edit-dropdown-wrap">
+          <button type="button" class="edit-dropdown-trigger" data-type="visibility">Visitor+</button>
+          <div class="edit-dropdown-menu" style="display:none">
+            <button type="button" data-value="visitor">Visitor+</button>
+            <button type="button" data-value="member">Member+</button>
+            <button type="button" data-value="editor">Editor+</button>
+          </div>
+          <select id="spotMinRole" class="location-card-edit-class" style="display:none">
+            <option value="visitor">Visitor+</option>
+            <option value="member">Member+</option>
+            <option value="editor">Editor+</option>
+          </select>
+        </div>
+        <button type="button" class="edit-back-btn">← Back</button>
+      </div>
+      <div class="edit-section-desc">
+        <div class="edit-section-title">Description</div>
+        <div id="spotDesc" class="location-card-edit-desc" contenteditable></div>
+        <button type="button" class="edit-back-btn">← Back</button>
+      </div>
+      <input type="file" id="spotImage" accept="image/*" multiple style="display:none">
     </div>
     <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
     addDescToolbar(wrap.querySelector('#spotDesc'), wrap.querySelector('#spotImage'));
+    initEditDropdown(wrap);
+    wrap.classList.add('edit-main-visible');
+    wrap.querySelectorAll('.edit-nav-btn').forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        wrap.classList.remove('edit-main-visible', 'edit-info-visible', 'edit-desc-visible');
+        wrap.classList.add('edit-' + btn.dataset.section + '-visible');
+        if (newMarker && newMarker.getPopup) newMarker.getPopup().update();
+      };
+    });
+    wrap.querySelectorAll('.edit-back-btn').forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        wrap.classList.remove('edit-main-visible', 'edit-info-visible', 'edit-desc-visible');
+        wrap.classList.add('edit-main-visible');
+        if (newMarker && newMarker.getPopup) newMarker.getPopup().update();
+      };
+    });
     newMarker.bindPopup(wrap, { minWidth: 240 }).openPopup();
     wrap.querySelector('#spotClass').onchange = function() {
       const selectedClass = normalizeSpotClass(this.value);
       newMarker._spotClass = selectedClass;
       newMarker.setIcon(getSpotIcon(selectedClass));
       reapplyMarkerScale(newMarker);
+    };
+    wrap.querySelector('#cancelSpotBtn').onclick = () => {
+      if (newMarker) {
+        if (spotClusterGroup && spotClusterGroup.hasLayer(newMarker)) {
+          spotClusterGroup.removeLayer(newMarker);
+        } else if (map && map.hasLayer(newMarker)) {
+          map.removeLayer(newMarker);
+        }
+      }
+      addSpotProcessing = false;
     };
     wrap.querySelector('#saveSpotBtn').onclick = async () => {
       const name = (wrap.querySelector('#spotName').value.trim()) || 'Unnamed spot';
@@ -2071,37 +2177,40 @@ function runMapApp() {
         const loadingOverlay = wrap.querySelector('.spot-edit-loading-overlay');
         loadingOverlay.style.display = 'flex';
         void loadingOverlay.offsetHeight;
-        const ref = await addDoc(collection(db, SPOTS_COLLECTION), { lat: pos.lat, lng: pos.lng, name, description: desc, spotClass, minRole, images: [], comments: [], createdAt: serverTimestamp() });
+        const ref = await addDoc(collection(db, SPOTS_COLLECTION), { lat: pos.lat, lng: pos.lng, name, description: desc, spotClass, minRole, images: [], comments: [], createdAt: serverTimestamp(), addedBy: { uid: currentUser ? currentUser.uid : '', displayName: currentUser ? (currentUser.displayName || getUserDisplayLabel(currentUser)) : 'Unknown', role: userRole || 'visitor' } });
         const imageUrls = [];
         for (const file of fileInput.files) {
           const result = await uploadSpotImage(ref.id, file);
           imageUrls.push(result.publicUrl);
         }
-        const imageUrl = imageUrls[0] || '';
-        const images = imageUrls.slice(1);
-        if (imageUrl) {
-          await updateDoc(doc(db, SPOTS_COLLECTION, ref.id), { imageUrl, images });
+        if (imageUrls.length) {
+          await updateDoc(doc(db, SPOTS_COLLECTION, ref.id), { images: imageUrls });
         }
         newMarker._spotId = ref.id;
         newMarker._spotClass = spotClass;
         newMarker._spotComments = [];
         newMarker._spotName = name;
         newMarker._spotDesc = desc;
-        newMarker._spotImageUrl = imageUrl;
-        newMarker._spotImages = images;
+        newMarker._spotImages = imageUrls;
         newMarker._spotMinRole = minRole;
+        newMarker._spotAddedBy = { uid: currentUser ? currentUser.uid : '', displayName: currentUser ? (currentUser.displayName || getUserDisplayLabel(currentUser)) : 'Unknown', role: userRole || 'visitor' };
+        newMarker._spotCreatedAt = Date.now();
         newMarker.dragging.disable();
         newMarker.setIcon(getSpotIcon(spotClass));
         reapplyMarkerScale(newMarker);
-        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, imageUrl, images, spotClass, minRole, comments: newMarker._spotComments, editMode: false }));
+        newMarker.getPopup().setContent(createSpotPopup({ marker: newMarker, spotId: ref.id, name, desc, images: imageUrls, spotClass, minRole, comments: newMarker._spotComments, editMode: false, addedBy: newMarker._spotAddedBy, createdAt: newMarker._spotCreatedAt }));
         const pop = newMarker.getPopup();
         const cb = pop._closeButton;
         if (cb) cb.style.cssText = '';
         const w = pop._wrapper;
         if (w) w.classList.remove('is-editing');
         pop.update();
+        const ll = pop.getLatLng();
+        if (ll) pop.setLatLng(ll);
+        loadingOverlay.style.display = 'none';
         clearSpotsCache();
         upsertSpotSearchEntry(ref.id, name, newMarker);
+        notifyNewSpot(db, ref.id, name, currentUser ? currentUser.uid : '', currentUser ? getUserDisplayLabel(currentUser) : '').catch(() => {});
         wrap.querySelector('#saveStatus').textContent = 'Saved!';
         wrap.querySelector('#saveStatus').style.color = '#8ec5ff';
       } catch (err) {
@@ -2214,6 +2323,8 @@ function addEditableLinkSupport(editableEl) {
   if (!editableEl || editableEl.dataset.linkSupportBound === '1') return;
   editableEl.dataset.linkSupportBound = '1';
 
+  const positionParent = editableEl.closest('.location-card') || editableEl.parentNode;
+
   let controls = null;
   let editor = null;
   let activeAnchor = null;
@@ -2244,7 +2355,7 @@ function addEditableLinkSupport(editableEl) {
   }
 
   function placeFloatingBox(box, targetEl, sourceRange = null) {
-    const parentRect = editableEl.parentNode.getBoundingClientRect();
+    const parentRect = positionParent.getBoundingClientRect();
     const anchorRect = getRangeRect(sourceRange) || targetEl.getBoundingClientRect();
     const gap = 8;
     const minLeft = 6;
@@ -2281,7 +2392,7 @@ function addEditableLinkSupport(editableEl) {
         ${targetAnchor ? '<button type="button" class="spot-link-editor-btn spot-link-editor-unlink" data-action="unlink">Unlink</button>' : ''}
       </div>
     `;
-    editableEl.parentNode.appendChild(editor);
+    positionParent.appendChild(editor);
 
     const textInput = editor.querySelector('[data-field="text"]');
     const urlInput = editor.querySelector('[data-field="url"]');
@@ -2350,7 +2461,7 @@ function addEditableLinkSupport(editableEl) {
     controls = document.createElement('div');
     controls.className = 'spot-link-controls';
     controls.innerHTML = getLinkActionButtonsHtml(true);
-    editableEl.parentNode.appendChild(controls);
+    positionParent.appendChild(controls);
     placeFloatingBox(controls, anchor);
   }
 
@@ -2379,7 +2490,7 @@ function addEditableLinkSupport(editableEl) {
     document.addEventListener('click', activeLinkControlsCloser);
   }
 
-  editableEl.parentNode.addEventListener('click', (e) => {
+  positionParent.addEventListener('click', (e) => {
     if (!controls || !controls.contains(e.target)) return;
     const actionEl = e.target.closest('[data-action]');
     const action = actionEl ? actionEl.getAttribute('data-action') : null;
@@ -2395,9 +2506,9 @@ function addEditableLinkSupport(editableEl) {
       const href = activeAnchor.href || activeAnchor.getAttribute('href') || '';
       if (!href) return;
       copyTextToClipboard(href).then((copied) => {
-        showInlineToast(editableEl.parentNode, copied ? 'Copied link to clipboard' : 'Could not copy link');
+        showInlineToast(positionParent, copied ? 'Copied link to clipboard' : 'Could not copy link');
       }).catch(() => {
-        showInlineToast(editableEl.parentNode, 'Could not copy link');
+        showInlineToast(positionParent, 'Could not copy link');
       });
       return;
     }
@@ -2599,6 +2710,55 @@ function addDescToolbar(el, spotImageInput, spotId) {
   el.before(bar);
 }
 
+function closeDropdownAnimated(menu) {
+  if (!menu || menu.style.display === 'none') return;
+  if (menu.classList.contains('is-closing')) return;
+  menu.classList.add('is-closing');
+  menu.addEventListener('animationend', function onEnd() {
+    menu.removeEventListener('animationend', onEnd);
+    menu.style.display = 'none';
+    menu.classList.remove('is-closing');
+  });
+}
+
+function initEditDropdown(container) {
+  container.querySelectorAll('.edit-dropdown-wrap').forEach(dw => {
+    const trigger = dw.querySelector('.edit-dropdown-trigger');
+    const menu = dw.querySelector('.edit-dropdown-menu');
+    const select = dw.querySelector('select');
+    if (!trigger || !menu || !select) return;
+
+    trigger.textContent = select.options[select.selectedIndex].textContent;
+
+    trigger.onclick = e => {
+      e.stopPropagation();
+      container.querySelectorAll('.edit-dropdown-menu').forEach(m => {
+        if (m !== menu) closeDropdownAnimated(m);
+      });
+      if (menu.style.display === 'none' || menu.classList.contains('is-closing')) {
+        menu.style.display = '';
+        menu.classList.remove('is-closing');
+      } else {
+        closeDropdownAnimated(menu);
+      }
+    };
+
+    menu.querySelectorAll('button').forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        select.value = btn.dataset.value;
+        trigger.textContent = btn.textContent;
+        closeDropdownAnimated(menu);
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+    });
+
+    document.addEventListener('click', function closeDD(e) {
+      if (!dw.contains(e.target)) closeDropdownAnimated(menu);
+    });
+  });
+}
+
 function showImageOverlay(url) {
   const el = document.getElementById('imageOverlay');
   el.querySelector('img').src = url;
@@ -2653,154 +2813,74 @@ function formatCommentTime(value) {
   return new Date(ms).toLocaleString([], {
     year: 'numeric',
     month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
+    day: 'numeric'
   });
 }
 
 
-function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], spotClass, minRole = 'visitor', comments = [], editMode, activePane = 'details' }) {
+function createSpotPopup({ marker, spotId, name, desc, images = [], spotClass, minRole = 'visitor', comments = [], editMode, activePane = 'details', addedBy = null, createdAt = null }) {
   const wrap = document.createElement('div');
   wrap.className = 'location-card';
 
   if (!editMode) {
     const spotLatLng = marker && typeof marker.getLatLng === 'function' ? marker.getLatLng() : null;
     const googleMapsUrl = spotLatLng
-      ? `https://www.google.com/maps?q=${encodeURIComponent(`${spotLatLng.lat},${spotLatLng.lng}`)}`
+      ? `https://www.google.com/maps/dir/?api=1&destination=${spotLatLng.lat},${spotLatLng.lng}`
       : '';
     const currentComments = Array.isArray(comments) ? comments : [];
     const commentsCount = currentComments.length;
-
-    // Collect image URLs
-    const urlSet = new Set();
-    if (imageUrl) urlSet.add(imageUrl);
-    if (Array.isArray(images)) images.forEach(u => { if (u) urlSet.add(u); });
-    if (desc) {
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = desc;
-      tempDiv.querySelectorAll('img').forEach(img => { if (img.src) urlSet.add(img.src); });
-    }
-    const allImageUrls = [...urlSet];
 
     // Labels
     const statusLabels = { confirmed: 'Confirmed', risky: 'Risky', unsure: 'Unsure', default: 'No Class' };
     const statusLabel = statusLabels[spotClass] || 'No Class';
     const visibilityLabels = { visitor: 'Visitor+', member: 'Member+', editor: 'Editor+' };
     const visibilityLabel = visibilityLabels[minRole] || 'Visitor+';
-    const subtitleParts = [];
-    if (spotLatLng) subtitleParts.push(`${spotLatLng.lat.toFixed(4)}, ${spotLatLng.lng.toFixed(4)}`);
-    subtitleParts.push(statusLabel);
-    const subtitle = subtitleParts.join(' · ');
+    const coordsStr = spotLatLng ? `${spotLatLng.lat.toFixed(4)}, ${spotLatLng.lng.toFixed(4)}` : '';
+    const subtitle = [coordsStr, statusLabel].filter(Boolean).join(' · ');
+    const addedDateStr = createdAt ? formatCommentTime(createdAt) : '';
+    const addedByStr = addedBy && addedBy.displayName ? escapeHtml(addedBy.displayName) : (currentUser && currentUser.displayName ? escapeHtml(currentUser.displayName) : '');
 
-    // Meta grid
-    const metaHtml = `<div class="location-card-meta">
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Status</span>
-        <span class="location-card-meta-value">${statusLabel}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Visibility</span>
-        <span class="location-card-meta-value">${visibilityLabel}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Coordinates</span>
-        <span class="location-card-meta-value">${spotLatLng ? `${spotLatLng.lat.toFixed(4)}, ${spotLatLng.lng.toFixed(4)}` : '—'}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Comments</span>
-        <span class="location-card-meta-value">${commentsCount}</span>
-      </div>
-    </div>`;
-
-    // Photo strip
-    const photosHtml = allImageUrls.length ? `<div class="location-card-photos">
-      ${allImageUrls.map(url => `<img class="location-card-photo-thumb" src="${escapeHtml(url)}" alt="">`).join('')}
-    </div>` : '';
+    // Description preview (sanitized HTML, no truncation)
+    let descPreview = '';
+    if (desc) {
+      descPreview = desc
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/<\/?(?:div|p|h[1-6]|li)[^>]*>/gi, '<br>')
+        .replace(/<(?!\/?(?:b|i|u|em|strong|br|span)\b)[^>]*>/gi, '')
+        .replace(/(<br>\s*){2,}/g, '<br>')
+        .trim();
+    }
 
     // Edit button for header
     const editBtnHtml = canEditSpots() ? `<button class="location-card-action-btn" data-action="edit" title="Edit spot" aria-label="Edit spot">
       <svg viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16v4zm14.7-11.3c.4-.4.4-1 0-1.4l-2-2a1 1 0 0 0-1.4 0l-1.6 1.6 4 4 1-1.2z"/></svg>
     </button>` : '';
 
-    // Quick action cards
-    const actionsBarHtml = `<div class="location-card-actions-bar">
-      <div class="location-card-action-card" data-action="expand" role="button" tabindex="0">
-        <span class="action-icon">+</span> Details
-      </div>
-      <div class="location-card-action-card" data-action="comments" role="button" tabindex="0">
-        <span class="action-icon">💬</span> Comments (${commentsCount})
-      </div>
-      ${googleMapsUrl ? `<div class="location-card-action-card" data-action="directions" role="button" tabindex="0">
-        <span class="action-icon">→</span> Directions
-      </div>` : ''}
-      ${allImageUrls.length ? `<div class="location-card-action-card" data-action="photos" role="button" tabindex="0">
-        <span class="action-icon">🖼</span> Photos
-      </div>` : ''}
-    </div>`;
-
     // Comments for expandable
     const commentsHtml = currentComments.length
       ? currentComments.map((comment, idx) => {
           const commentText = escapeHtml((comment && comment.text) || '');
-          const commentAuthor = escapeHtml((comment && comment.author) || 'User');
+          const displayName = (comment && (comment.authorDisplay || comment.author)) || 'User';
+          const commentAuthor = escapeHtml(displayName);
+          const commentInitial = (comment && comment.authorInitial) || displayName.charAt(0).toUpperCase() || 'U';
           const commentTime = formatCommentTime(comment && comment.createdAt);
-          const timeSuffix = commentTime ? ` · ${escapeHtml(commentTime)}` : '';
+          const timeStr = commentTime ? escapeHtml(commentTime) : '';
           const deleteButton = isAdminRole()
-            ? `<button type="button" class="location-card-comment-delete" data-comment-index="${idx}">Delete</button>`
+            ? `<button type="button" class="location-card-comment-delete" data-comment-index="${idx}" aria-label="Delete comment">✕</button>`
             : '';
-          return `<div class="location-card-comment-item">
-            <div class="location-card-comment-meta">
-              <span class="location-card-comment-author">${commentAuthor}</span>
-              <span>${timeSuffix}${deleteButton}</span>
+          return `<div class="comment-item">
+            <div class="comment-avatar">${escapeHtml(commentInitial)}</div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <span class="comment-author">${commentAuthor}</span>
+                <span class="comment-time">${timeStr}</span>
+                ${deleteButton}
+              </div>
+              <div class="comment-text">${commentText}</div>
             </div>
-            <div class="location-card-comment-text">${commentText}</div>
           </div>`;
         }).join('')
-      : '<div class="location-card-comment-empty">No comments yet.</div>';
-
-    // Extra metadata for Details expandable
-    const extraMetaHtml = `<div class="location-card-full-meta">
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Spot ID</span>
-        <span class="location-card-meta-value">${escapeHtml(spotId)}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Latitude</span>
-        <span class="location-card-meta-value">${spotLatLng ? spotLatLng.lat.toFixed(6) : '—'}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Longitude</span>
-        <span class="location-card-meta-value">${spotLatLng ? spotLatLng.lng.toFixed(6) : '—'}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Status</span>
-        <span class="location-card-meta-value">${statusLabel}</span>
-      </div>
-      <div class="location-card-meta-item">
-        <span class="location-card-meta-label">Visibility</span>
-        <span class="location-card-meta-value">${visibilityLabel}</span>
-      </div>
-    </div>`;
-
-    // Expandable section (Details shows description + meta, Comments shows comments)
-    const expandableHtml = `<div class="location-card-expandable">
-      <div class="location-card-expandable-inner">
-        <div data-pane="details">
-          ${desc ? `<div class="location-card-full-desc">${desc}</div>` : ''}
-          ${extraMetaHtml}
-        </div>
-        <div class="location-card-comments" data-pane="comments">
-          <h4 class="location-card-comments-title">Comments</h4>
-          <div class="location-card-comments-list">${commentsHtml}</div>
-          <div class="location-card-comment-form">
-            <textarea class="location-card-comment-input" rows="2" maxlength="300" placeholder="Add a comment"></textarea>
-            <button type="button" class="location-card-comment-btn">Post</button>
-          </div>
-          <p class="location-card-edit-status" style="display:none"></p>
-        </div>
-      </div>
-    </div>`;
+      : '<div class="comment-empty"><span class="comment-empty-icon">💬</span> No comments yet</div>';
 
     // Full card assembly
     wrap.innerHTML = `<div class="location-card-header">
@@ -2812,22 +2892,75 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         </div>
       </div>
       <div class="location-card-actions">
+        <button class="location-card-action-btn location-card-more-btn" data-action="more" title="More options" aria-label="More options">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
+        </button>
         ${editBtnHtml}
+      </div>
+      ${descPreview ? `<p class="location-card-desc-preview">${descPreview}</p>` : ''}
+      <div class="location-card-content">
+        <div class="location-card-details-content" style="display:none">
+          <div class="location-card-full-meta">
+            <div class="location-card-meta-item">
+              <span class="location-card-meta-label">STATUS</span>
+              <span class="location-card-meta-value">${statusLabel}</span>
+            </div>
+            <div class="location-card-meta-item">
+              <span class="location-card-meta-label">VISIBILITY</span>
+              <span class="location-card-meta-value">${visibilityLabel}</span>
+            </div>
+            <div class="location-card-meta-item">
+              <span class="location-card-meta-label">DATE ADDED</span>
+              <span class="location-card-meta-value">${addedDateStr || '—'}</span>
+            </div>
+            <div class="location-card-meta-item">
+              <span class="location-card-meta-label">ADDED BY</span>
+              <span class="location-card-meta-value">${addedByStr || '—'}</span>
+            </div>
+          </div>
+          <button type="button" class="location-card-collapse-btn" data-action="collapse">← Back</button>
+        </div>
+        <div class="location-card-comments-content" style="display:none">
+          <h4 class="location-card-section-title">Comments</h4>
+          <div class="location-card-comments-list">${commentsHtml}</div>
+          <div class="location-card-comment-form">
+            <textarea class="location-card-comment-input" rows="2" maxlength="300" placeholder="Add a comment..."></textarea>
+            <button type="button" class="location-card-comment-btn">Post</button>
+          </div>
+          <p class="location-card-edit-status" style="display:none"></p>
+          <button type="button" class="location-card-collapse-btn" data-action="collapse">← Back</button>
+        </div>
+        <div class="location-card-photos-content" style="display:none">
+          <div class="location-card-photos-viewer">
+            <div class="photos-nav-btn photos-prev" data-photos-action="prev">◀</div>
+            <img class="photos-main-img" src="" alt="">
+            <div class="photos-nav-btn photos-next" data-photos-action="next">▶</div>
+          </div>
+          <div class="photos-counter"></div>
+          <button type="button" class="location-card-collapse-btn" data-action="collapse">← Back</button>
+        </div>
       </div>
     </div>
     <div class="location-card-body">
-      ${metaHtml}
-      ${photosHtml}
-    </div>
-    ${actionsBarHtml}
-    ${expandableHtml}`;
+      <div class="location-card-actions-bar">
+        <div class="location-card-action-btn-inline" data-action="photos">
+          <span class="action-icon">📷</span> Photos
+        </div>
+        <div class="location-card-action-btn-inline" data-action="comments">
+          <span class="action-icon">💬</span> Comments <span class="location-card-comment-count">${commentsCount}</span>
+        </div>
+        <div class="location-card-action-btn-inline location-card-expand-trigger" data-action="expand">
+          Details
+        </div>
+      </div>
+    </div>`;
 
-    // ── Edit button ──
+    // ── Edit button (top-right) ──
     const editBtn = wrap.querySelector('[data-action="edit"]');
     if (editBtn) {
       editBtn.onclick = e => {
         e.preventDefault(); e.stopPropagation();
-        const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
+        const editWrap = createSpotPopup({ marker, spotId, name, desc, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true, addedBy: marker._spotAddedBy, createdAt: marker._spotCreatedAt });
         marker.getPopup().setContent(editWrap);
         marker.getPopup().openPopup();
         marker.dragging.enable();
@@ -2835,45 +2968,211 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
       };
     }
 
-    // ── Action cards ──
-    const expandable = wrap.querySelector('.location-card-expandable');
-    if (expandable) {
-      wrap.querySelectorAll('.location-card-action-card').forEach(card => {
-        card.onclick = e => {
+    // ── More button (top-right "+" drawer, body-level) ──
+    const moreBtn = wrap.querySelector('[data-action="more"]');
+    // Create shared drawer once
+    if (!document.querySelector('#global-more-drawer')) {
+      const drawer = document.createElement('div');
+      drawer.id = 'global-more-drawer';
+      drawer.className = 'more-drawer';
+      drawer.style.display = 'none';
+      drawer.innerHTML = `
+        <button type="button" class="more-drawer-item" data-action="directions">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11L11 5M7 5h4v4"/></svg>
+          <span>Directions</span>
+        </button>
+        <button type="button" class="more-drawer-item" data-action="maps-pin">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1C5.2 1 3 3.2 3 6c0 3.5 5 9 5 9s5-5.5 5-9c0-2.8-2.2-5-5-5z"/><circle cx="8" cy="6" r="1.5"/></svg>
+          <span>Open in Google Maps</span>
+        </button>
+      `;
+      document.body.appendChild(drawer);
+
+      drawer.querySelectorAll('.more-drawer-item').forEach(item => {
+        item.addEventListener('click', e => {
           e.stopPropagation();
-          const action = card.dataset.action;
-          if (action === 'expand') {
-            const isOpen = expandable.classList.toggle('is-open');
-            const icon = card.querySelector('.action-icon');
-            if (icon) icon.textContent = isOpen ? '−' : '+';
-            card.textContent = isOpen ? ' Close' : ' Details';
-            if (icon) card.prepend(icon);
-            if (isOpen) {
-              const metaSection = expandable.querySelector('[data-pane="details"]');
-              if (metaSection) metaSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-          } else if (action === 'comments') {
-            expandable.classList.add('is-open');
-            const commentsEl = expandable.querySelector('.location-card-comments');
-            if (commentsEl) commentsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          } else if (action === 'directions' && googleMapsUrl) {
-            window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
-          } else if (action === 'photos' && allImageUrls.length) {
-            showImageOverlay(allImageUrls[0]);
+          const action = item.getAttribute('data-action');
+          const ctx = drawer._ctx;
+          if (action === 'directions' && ctx) {
+            window.open(ctx.googleMapsUrl, '_blank', 'noopener,noreferrer');
+          } else if (action === 'maps-pin' && ctx && ctx.spotLatLng) {
+            window.open(`https://www.google.com/maps?q=${ctx.spotLatLng.lat},${ctx.spotLatLng.lng}`, '_blank', 'noopener,noreferrer');
           }
-        };
+          closeMoreDrawer();
+        });
+      });
+
+      document.addEventListener('click', e => {
+        if (!drawer || drawer.style.display === 'none') return;
+        if (!drawer.contains(e.target) && !e.target.closest('[data-action="more"]')) {
+          closeMoreDrawer();
+        }
       });
     }
 
-    // ── Photo thumb clicks ──
-    wrap.querySelectorAll('.location-card-photo-thumb').forEach((thumb, idx) => {
-      thumb.onclick = e => { e.stopPropagation(); showImageOverlay(allImageUrls[idx]); };
-    });
+    function closeMoreDrawer() {
+      const d = document.getElementById('global-more-drawer');
+      if (!d || d.style.display === 'none') return;
+      d.classList.add('is-closing');
+      d.addEventListener('animationend', function onEnd() {
+        d.removeEventListener('animationend', onEnd);
+        d.style.display = 'none';
+        d.classList.remove('is-closing');
+      });
+    }
+
+    if (moreBtn) {
+      moreBtn.onclick = e => {
+        e.stopPropagation();
+        const d = document.getElementById('global-more-drawer');
+        if (!d) return;
+        if (d.style.display === 'none' || d.classList.contains('is-closing')) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          d.style.left = rect.left + 'px';
+          d.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+          d._ctx = { googleMapsUrl, spotLatLng };
+          d.classList.remove('is-closing');
+          d.style.display = '';
+        } else {
+          closeMoreDrawer();
+        }
+      };
+    }
+
+    // ── Content panel toggling ──
+    const content = wrap.querySelector('.location-card-content');
+    const descPreviewEl = wrap.querySelector('.location-card-desc-preview');
+    const detailsContent = content ? content.querySelector('.location-card-details-content') : null;
+    const commentsContent = content ? content.querySelector('.location-card-comments-content') : null;
+    const photosContent = content ? content.querySelector('.location-card-photos-content') : null;
+    const expandTrigger = wrap.querySelector('[data-action="expand"]');
+    const collapseBtns = wrap.querySelectorAll('[data-action="collapse"]');
+
+    function showDetails() {
+      if (descPreviewEl) descPreviewEl.style.display = 'none';
+      if (detailsContent) detailsContent.style.display = 'block';
+      if (commentsContent) commentsContent.style.display = 'none';
+      if (photosContent) photosContent.style.display = 'none';
+      wrap.classList.add('is-expanded');
+      if (marker && marker.getPopup) marker.getPopup().update();
+    }
+
+    function showComments() {
+      if (descPreviewEl) descPreviewEl.style.display = 'none';
+      if (detailsContent) detailsContent.style.display = 'none';
+      if (commentsContent) commentsContent.style.display = 'block';
+      if (photosContent) photosContent.style.display = 'none';
+      wrap.classList.add('is-expanded');
+      if (marker && marker.getPopup) marker.getPopup().update();
+    }
+
+    function showPhotos() {
+      if (descPreviewEl) descPreviewEl.style.display = 'none';
+      if (detailsContent) detailsContent.style.display = 'none';
+      if (commentsContent) commentsContent.style.display = 'none';
+      if (photosContent) {
+        const allPhotos = (Array.isArray(images) ? images : []).filter(Boolean);
+        const imgEl = photosContent.querySelector('.photos-main-img');
+        const counterEl = photosContent.querySelector('.photos-counter');
+        const prevBtn = photosContent.querySelector('.photos-prev');
+        const nextBtn = photosContent.querySelector('.photos-next');
+        let idx = parseInt(photosContent.dataset.photoIndex || '0', 10);
+        if (idx >= allPhotos.length) idx = 0;
+        if (idx < 0) idx = 0;
+        if (!allPhotos.length) {
+          const viewerEl = photosContent.querySelector('.location-card-photos-viewer');
+          if (viewerEl) viewerEl.style.minHeight = '0';
+          imgEl.style.display = 'none';
+          counterEl.textContent = 'No Images Attached';
+          counterEl.style.color = '#ff4444';
+          prevBtn.style.display = 'none';
+          nextBtn.style.display = 'none';
+        } else {
+          imgEl.style.display = '';
+          counterEl.style.color = 'var(--text-muted)';
+          imgEl.src = allPhotos[idx];
+          counterEl.textContent = `${idx + 1} / ${allPhotos.length}`;
+          prevBtn.style.display = idx > 0 ? '' : 'none';
+          nextBtn.style.display = idx < allPhotos.length - 1 ? '' : 'none';
+        }
+          photosContent.dataset.photos = JSON.stringify(allPhotos);
+        photosContent.style.display = 'block';
+        photosContent.dataset.photoIndex = idx;
+      }
+      wrap.classList.add('is-expanded');
+      if (marker && marker.getPopup) marker.getPopup().update();
+    }
+
+    function doCollapse() {
+      if (descPreviewEl) descPreviewEl.style.display = '';
+      if (detailsContent) detailsContent.style.display = 'none';
+      if (commentsContent) commentsContent.style.display = 'none';
+      if (photosContent) photosContent.style.display = 'none';
+      wrap.classList.remove('is-expanded');
+      if (marker && marker.getPopup) marker.getPopup().update();
+    }
+
+    if (expandTrigger) expandTrigger.onclick = e => { e.stopPropagation(); showDetails(); };
+    collapseBtns.forEach(btn => btn.onclick = e => { e.stopPropagation(); doCollapse(); });
+
+    // ── Photos prev/next navigation ──
+    if (photosContent) {
+      photosContent.addEventListener('click', e => {
+        const actionEl = e.target.closest('[data-photos-action]');
+        if (!actionEl) return;
+        e.stopPropagation();
+        const allPhotos = JSON.parse(photosContent.dataset.photos || '[]');
+        if (!allPhotos.length) return;
+        let idx = parseInt(photosContent.dataset.photoIndex || '0', 10);
+        const imgEl = photosContent.querySelector('.photos-main-img');
+        const counterEl = photosContent.querySelector('.photos-counter');
+        const prevBtn = photosContent.querySelector('.photos-prev');
+        const nextBtn = photosContent.querySelector('.photos-next');
+        if (actionEl.dataset.photosAction === 'prev' && idx > 0) idx--;
+        if (actionEl.dataset.photosAction === 'next' && idx < allPhotos.length - 1) idx++;
+        imgEl.src = allPhotos[idx];
+        counterEl.textContent = `${idx + 1} / ${allPhotos.length}`;
+        prevBtn.style.display = idx > 0 ? '' : 'none';
+        nextBtn.style.display = idx < allPhotos.length - 1 ? '' : 'none';
+        photosContent.dataset.photoIndex = idx;
+        if (marker && marker.getPopup) marker.getPopup().update();
+      });
+      // Fullscreen on image click
+      photosContent.querySelector('.photos-main-img').onclick = e => {
+        e.stopPropagation();
+        if (photosContent.querySelector('.photos-main-img').src) {
+          showImageOverlay(photosContent.querySelector('.photos-main-img').src);
+        }
+      };
+    }
+
+    // ── Comments button opens comments panel ──
+    const commentsTrigger = wrap.querySelector('.location-card-actions-bar [data-action="comments"]');
+    if (commentsTrigger) {
+      commentsTrigger.onclick = e => {
+        e.stopPropagation();
+        showComments();
+      };
+    }
+
+    // ── Photos button opens photos panel ──
+    const photosTrigger = wrap.querySelector('.location-card-actions-bar [data-action="photos"]');
+    if (photosTrigger) {
+      photosTrigger.onclick = e => {
+        e.stopPropagation();
+        showPhotos();
+      };
+    }
+
+    // ── Auto-expand to activePane if 'comments' ──
+    if (activePane === 'comments') {
+      requestAnimationFrame(() => showComments());
+    }
 
     // ── Link controls on description anchors ──
     addViewOnlyLinkSupport(wrap, {
       onEditLink: canEditSpots() ? () => {
-        const editWrap = createSpotPopup({ marker, spotId, name, desc, imageUrl, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true });
+        const editWrap = createSpotPopup({ marker, spotId, name, desc, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true, addedBy: marker._spotAddedBy, createdAt: marker._spotCreatedAt });
         marker.getPopup().setContent(editWrap);
         marker.getPopup().openPopup();
         marker.dragging.enable();
@@ -2887,15 +3186,27 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     const commentStatus = wrap.querySelector('.location-card-edit-status');
     if (commentBtn && commentInput) {
       commentBtn.onclick = async () => {
+        if (isVisitorRole()) {
+          if (commentStatus) { commentStatus.textContent = 'You must be signed in to comment.'; commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
+          return;
+        }
         const text = commentInput.value.trim();
         if (!text) {
           if (commentStatus) { commentStatus.textContent = 'Write a comment first.'; commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
           return;
         }
+        if (!isAdminRole() && currentComments.filter(c => c.authorUid === currentUser.uid).length >= 3) {
+          if (commentStatus) { commentStatus.textContent = 'You have reached the maximum of 3 comments on this spot.'; commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
+          return;
+        }
+        const userDisplay = currentUser ? getUserDisplayLabel(currentUser) : (userRole || 'User');
         const newComment = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           text,
-          author: userRole || 'User',
+          author: userDisplay,
+          authorDisplay: userDisplay,
+          authorInitial: userDisplay.charAt(0).toUpperCase() || 'U',
+          authorUid: currentUser ? currentUser.uid : '',
           createdAt: Date.now()
         };
         const nextComments = [...currentComments, newComment];
@@ -2907,12 +3218,15 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
             updatedAt: serverTimestamp()
           });
           marker._spotComments = nextComments;
+          clearSpotsCache();
           marker.getPopup().setContent(createSpotPopup({
-            marker, spotId, name, desc, imageUrl,
+            marker, spotId, name, desc,
             images: marker._spotImages || [], spotClass,
             minRole: marker._spotMinRole || minRole,
             comments: marker._spotComments,
-            editMode: false, activePane: 'comments'
+            editMode: false, activePane: 'comments',
+            addedBy: marker._spotAddedBy,
+            createdAt: marker._spotCreatedAt
           }));
           marker.getPopup().openPopup();
         } catch (err) {
@@ -2929,6 +3243,7 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         btn.onclick = async () => {
           const index = Number(btn.getAttribute('data-comment-index'));
           if (!Number.isInteger(index) || index < 0 || index >= currentComments.length) return;
+          const deletedComment = currentComments[index];
           const nextComments = currentComments.filter((_, i) => i !== index);
           btn.disabled = true;
           try {
@@ -2937,46 +3252,100 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
               updatedAt: serverTimestamp()
             });
             marker._spotComments = nextComments;
+            clearSpotsCache();
             marker.getPopup().setContent(createSpotPopup({
-              marker, spotId, name, desc, imageUrl,
+              marker, spotId, name, desc,
               images: marker._spotImages || [], spotClass,
               minRole: marker._spotMinRole || minRole,
               comments: marker._spotComments,
-              editMode: false, activePane: 'comments'
+              editMode: false, activePane: 'comments',
+              addedBy: marker._spotAddedBy,
+              createdAt: marker._spotCreatedAt
             }));
             marker.getPopup().openPopup();
+            if (deletedComment && deletedComment.authorUid && deletedComment.authorUid !== (currentUser ? currentUser.uid : '')) {
+              notifyCommentDeleted(db, deletedComment.authorUid, name, currentUser ? currentUser.uid : '').catch(() => {});
+            }
           } catch (err) {
+            const status = wrap.querySelector('.location-card-edit-status');
+            if (status) { status.textContent = 'Failed to delete comment: ' + (err.code || err.message || String(err)); status.style.color = '#b00020'; status.style.display = 'block'; }
+          } finally {
             btn.disabled = false;
-            if (commentStatus) { commentStatus.textContent = 'Delete failed: ' + (err.code || err.message || String(err)); commentStatus.style.color = '#b00020'; commentStatus.style.display = 'block'; }
           }
         };
       });
+    }
+
+    // ── Extra action buttons ──
+    const dirBtn = wrap.querySelector('[data-action="directions"]');
+    if (dirBtn) dirBtn.onclick = e => { e.stopPropagation(); window.open(googleMapsUrl, '_blank', 'noopener,noreferrer'); };
+
+    const editFullBtn = wrap.querySelector('[data-action="edit-full"]');
+    if (editFullBtn) {
+      editFullBtn.onclick = e => {
+        e.stopPropagation();
+        const editWrap = createSpotPopup({ marker, spotId, name, desc, images: marker._spotImages || [], spotClass, minRole: marker._spotMinRole || minRole, comments: currentComments, editMode: true, addedBy: marker._spotAddedBy, createdAt: marker._spotCreatedAt });
+        marker.getPopup().setContent(editWrap);
+        marker.getPopup().openPopup();
+        marker.dragging.enable();
+        marker.once('dragstart', () => marker.getPopup().closePopup());
+      };
     }
 
   } else {
     // ═══════ EDIT MODE ═══════
     wrap.classList.add('is-editing');
     wrap.innerHTML = `<div class="location-card-body">
-      <input class="location-card-edit-name" value="${escapeHtml(name)}" type="text">
-      <select class="location-card-edit-class">
-        <option value="default">No Class</option>
-        <option value="confirmed">&#9989; Confirmed</option>
-        <option value="risky">&#128308; Risky</option>
-        <option value="unsure">&#128993; Unsure</option>
-      </select>
-      <select class="location-card-edit-min-role">
-        <option value="visitor">Visitor+</option>
-        <option value="member">Member+</option>
-        <option value="editor">Editor+</option>
-      </select>
-      <input type="file" class="spot-edit-image" accept="image/*" multiple style="display:none">
-      <div class="location-card-edit-desc" contenteditable>${desc || ''}</div>
-      <div class="spot-edit-attachments"></div>
-      <div class="location-card-edit-actions">
-        <button type="button" class="location-card-edit-save">Save</button>
-        <button type="button" class="location-card-edit-delete">Delete</button>
+      <div class="edit-section-main">
+        <div class="spot-edit-attachments"></div>
+        <div class="edit-nav-btn-row">
+          <button type="button" class="edit-nav-btn" data-section="info">Info</button>
+          <button type="button" class="edit-nav-btn" data-section="desc">Desc</button>
+        </div>
+        <div class="location-card-edit-actions">
+          <button type="button" class="location-card-edit-save">Save</button>
+          ${isAdminRole() ? '<button type="button" class="location-card-edit-delete">Delete</button>' : ''}
+        </div>
+        <p class="location-card-edit-status"></p>
       </div>
-      <p class="location-card-edit-status"></p>
+      <div class="edit-section-info">
+        <input class="location-card-edit-name" value="${escapeHtml(name)}" type="text">
+        <div class="edit-dropdown-wrap">
+          <button type="button" class="edit-dropdown-trigger" data-type="class">No Class</button>
+          <div class="edit-dropdown-menu" style="display:none">
+            <button type="button" data-value="default">No Class</button>
+            <button type="button" data-value="confirmed">✅ Confirmed</button>
+            <button type="button" data-value="risky">🔴 Risky</button>
+            <button type="button" data-value="unsure">🟡 Unsure</button>
+          </div>
+          <select class="location-card-edit-class" style="display:none">
+            <option value="default">No Class</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="risky">Risky</option>
+            <option value="unsure">Unsure</option>
+          </select>
+        </div>
+        <div class="edit-dropdown-wrap">
+          <button type="button" class="edit-dropdown-trigger" data-type="visibility">Visitor+</button>
+          <div class="edit-dropdown-menu" style="display:none">
+            <button type="button" data-value="visitor">Visitor+</button>
+            <button type="button" data-value="member">Member+</button>
+            <button type="button" data-value="editor">Editor+</button>
+          </div>
+          <select class="location-card-edit-min-role" style="display:none">
+            <option value="visitor">Visitor+</option>
+            <option value="member">Member+</option>
+            <option value="editor">Editor+</option>
+          </select>
+        </div>
+        <button type="button" class="edit-back-btn">← Back</button>
+      </div>
+      <div class="edit-section-desc">
+        <div class="edit-section-title">Description</div>
+        <div class="location-card-edit-desc" contenteditable>${desc || ''}</div>
+        <button type="button" class="edit-back-btn">← Back</button>
+      </div>
+      <input type="file" class="spot-edit-image" accept="image/*" multiple style="display:none">
     </div>
     <div class="spot-edit-loading-overlay" style="display:none"><div class="spot-edit-loading-spinner"></div></div>`;
 
@@ -2985,14 +3354,32 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     classSel.value = normalizeSpotClass(spotClass || marker._spotClass);
     const minRoleSel = wrap.querySelector('.location-card-edit-min-role');
     minRoleSel.value = normalizeVisibilityRole(minRole || marker._spotMinRole || 'visitor');
+    initEditDropdown(wrap);
     const descEl = wrap.querySelector('.location-card-edit-desc');
     addDescToolbar(descEl, wrap.querySelector('.spot-edit-image'), spotId);
 
+    // ── Mobile tab switching ──
+    wrap.classList.add('edit-main-visible');
+    wrap.querySelectorAll('.edit-nav-btn').forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        wrap.classList.remove('edit-main-visible', 'edit-info-visible', 'edit-desc-visible');
+        wrap.classList.add('edit-' + btn.dataset.section + '-visible');
+        if (marker && marker.getPopup) marker.getPopup().update();
+      };
+    });
+    wrap.querySelectorAll('.edit-back-btn').forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        wrap.classList.remove('edit-main-visible', 'edit-info-visible', 'edit-desc-visible');
+        wrap.classList.add('edit-main-visible');
+        if (marker && marker.getPopup) marker.getPopup().update();
+      };
+    });
+
     // Attachment list from existing images
     const attachContainer = wrap.querySelector('.spot-edit-attachments');
-    const existingUrls = [];
-    if (imageUrl) existingUrls.push(imageUrl);
-    if (Array.isArray(images)) images.forEach(u => { if (u) existingUrls.push(u); });
+    const existingUrls = Array.isArray(images) ? images.filter(Boolean) : [];
     if (desc) {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = desc;
@@ -3044,10 +3431,9 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         const attachRows = wrap.querySelectorAll('.spot-edit-attachment');
         const remainingUrls = [];
         attachRows.forEach(row => { const u = row.dataset.url; if (u) remainingUrls.push(u); });
-        const finalImageUrl = remainingUrls[0] || newUploadedUrls[0] || '';
-        const finalImages = [...remainingUrls.slice(1), ...newUploadedUrls.slice(remainingUrls.length ? 1 : 0)];
+        const finalImages = [...remainingUrls, ...newUploadedUrls].filter(Boolean);
         let finalDesc = descEl.innerHTML.replace(/<img[^>]*>/gi, '').replace(/<p>\s*<\/p>/gi, '');
-        await updateDoc(doc(db, SPOTS_COLLECTION, spotId), { lat: marker.getLatLng().lat, lng: marker.getLatLng().lng, name: newName, description: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, updatedAt: serverTimestamp() });
+        await updateDoc(doc(db, SPOTS_COLLECTION, spotId), { lat: marker.getLatLng().lat, lng: marker.getLatLng().lng, name: newName, description: finalDesc, images: finalImages, spotClass: newClass, minRole: newMinRole, updatedAt: serverTimestamp() });
         if (wrap._removedImagePaths && wrap._removedImagePaths.length) {
           await Promise.allSettled(wrap._removedImagePaths.map(p => supabase.storage.from('spot-images').remove([p])));
         }
@@ -3055,18 +3441,18 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
         marker._spotClass = newClass;
         marker._spotName = newName;
         marker._spotDesc = finalDesc;
-        marker._spotImageUrl = finalImageUrl;
         marker._spotImages = finalImages;
         marker._spotMinRole = newMinRole;
         marker.setIcon(getSpotIcon(newClass));
         reapplyMarkerScale(marker);
         clearSpotsCache();
         upsertSpotSearchEntry(spotId, newName, marker);
-        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, imageUrl: finalImageUrl, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false }));
+        marker.getPopup().setContent(createSpotPopup({ marker, spotId, name: newName, desc: finalDesc, images: finalImages, spotClass: newClass, minRole: newMinRole, comments: marker._spotComments || [], editMode: false, addedBy: marker._spotAddedBy, createdAt: marker._spotCreatedAt }));
         const pop = marker.getPopup();
         const w = pop._wrapper;
         if (w) w.classList.remove('is-editing');
         pop.update();
+        loadingOverlay.style.display = 'none';
       } catch (err) {
         loadingOverlay.style.display = 'none';
         const status = wrap.querySelector('.location-card-edit-status');
@@ -3075,7 +3461,8 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     };
 
     // Delete
-    wrap.querySelector('.location-card-edit-delete').onclick = async () => {
+    const deleteBtn = wrap.querySelector('.location-card-edit-delete');
+    if (deleteBtn) deleteBtn.onclick = async () => {
       if (!confirm('Are you sure you want to delete this spot?')) return;
       try {
         const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
@@ -3093,6 +3480,35 @@ function createSpotPopup({ marker, spotId, name, desc, imageUrl, images = [], sp
     };
   }
   return wrap;
+}
+
+async function backfillSpotAddedBy() {
+  if (localStorage.getItem('cua_addedByBackfilled') === '1') return;
+  if (!currentUser || !currentUser.uid) return;
+  try {
+    const snap = await getDocs(collection(db, SPOTS_COLLECTION));
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      if (!d.data().addedBy) {
+        batch.update(doc(db, SPOTS_COLLECTION, d.id), {
+          addedBy: {
+            uid: currentUser.uid,
+            displayName: currentUser.displayName || getUserDisplayLabel(currentUser),
+            role: userRole || 'visitor'
+          }
+        });
+        count++;
+      }
+    });
+    if (count > 0) {
+      await batch.commit();
+      console.log('Backfilled addedBy for ' + count + ' spot(s)');
+    }
+    localStorage.setItem('cua_addedByBackfilled', '1');
+  } catch (err) {
+    console.warn('Failed to backfill addedBy:', err);
+  }
 }
 
 wireAccountMenu();

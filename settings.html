@@ -21,9 +21,9 @@
         <img src="CUA Logo.png" alt="Canadian Urbex Archive logo" class="drawer-logo-icon">
         <button class="drawer-close-button" type="button" aria-label="Close navigation menu">×</button>
       </div>
-      <a href="index.html" class="top-nav-link">Home</a>
-      <a href="map.html" class="top-nav-link">Map</a>
-      <a href="resources.html" class="top-nav-link">Resources</a>
+    <a href="index.html" class="top-nav-link">Home</a>
+    <a href="map.html" class="top-nav-link">Map</a>
+    <a href="resources.html" class="top-nav-link">Resources</a>
     </div>
     <div class="header-right">
       <button class="mobile-menu-button" type="button" aria-label="Open navigation menu"><span></span></button>
@@ -51,6 +51,7 @@
       <button class="settings-nav-item is-active" type="button" data-tab="account">Account Settings</button>
       <button class="settings-nav-item" type="button" data-tab="profile">Profile</button>
       <button class="settings-nav-item" type="button" data-tab="roles" data-owner-only="true" style="display:none;">Role Dashboard</button>
+      <button class="settings-nav-item" type="button" data-tab="dev-options" data-admin-only="true" style="display:none;">Dev Options</button>
       <button id="settingsCloseBtnSidebar" type="button" class="settings-close-btn" aria-label="Close settings">&times;</button>
     </aside>
     <section class="settings-panel-main">
@@ -200,6 +201,32 @@
           </div>
           <h2 class="settings-audit-title">Recent Role Changes</h2>
           <div id="roleAuditList" class="settings-audit-list"></div>
+        </div>
+      </div>
+      <div class="settings-tab-panel" data-panel="dev-options" data-admin-only="true" style="display:none;">
+        <div class="settings-panel-head">
+          <h1>Dev Options</h1>
+        </div>
+        <p class="settings-dev-warning">⚠️ This section is for administrators and developers only. All functions perform direct database operations.</p>
+        <div class="settings-section" style="margin-top:24px;">
+          <div class="settings-section-header">
+            <h3>Database Export</h3>
+          </div>
+          <p class="settings-dev-description">Export all Firestore collections to a JSON file for backup or analysis purposes.</p>
+          <div class="settings-dev-action">
+            <button id="devExportBtn" type="button" class="settings-dev-action-btn">Export Firestore Database</button>
+            <span id="devExportStatus" class="dev-export-status"></span>
+          </div>
+          <div id="devExportProgress" class="dev-export-progress" style="display:none;">
+            <div class="dev-progress-bar">
+              <div id="devProgressFill" class="dev-progress-fill"></div>
+            </div>
+            <div class="dev-progress-text">Exporting: <span id="devProgressCollections">0</span>/<span id="devProgressTotal">0</span> collections</div>
+          </div>
+        </div>
+        <div id="devAccessDenied" class="settings-dev-denied" style="display:none;">
+          <p>🔒 Access Denied</p>
+          <p>You do not have permission to access this section. Only administrators and above can export database.</p>
         </div>
       </div>
       </div>

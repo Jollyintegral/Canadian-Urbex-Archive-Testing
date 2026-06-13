@@ -3,6 +3,8 @@ import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signO
 import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
 import { applyTheme, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
+import { initNotificationsUI } from './notifications.js';
+import { initReportButton } from './reports.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -158,15 +160,28 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   sessionStorage.setItem('authSignedIn', '1');
+  let role = 'visitor';
   if (user.isAnonymous) {
     sessionStorage.setItem('userRole', 'visitor');
     applyTheme('');
   } else {
     sessionStorage.removeItem('guestMode');
     guestMode = false;
-    if (!sessionStorage.getItem('userRole')) sessionStorage.setItem('userRole', 'member');
+    const fetchedFlag = 'cua_user_fetched_' + user.uid;
+    role = normalizeRole(sessionStorage.getItem('userRole')) || '';
+    if (!role || role === 'visitor' || !sessionStorage.getItem(fetchedFlag)) {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        const userDoc = snap.data() || {};
+        role = normalizeRole(userDoc.role || 'member');
+        sessionStorage.setItem('userRole', role);
+        sessionStorage.setItem(fetchedFlag, '1');
+      } catch(e) { role = 'member'; }
+    }
     await loadUserTheme(db, user.uid);
   }
   updateAccountUi(user);
+  initNotificationsUI(db, user, role);
+  initReportButton(db, user);
   hidePageLoading();
 });

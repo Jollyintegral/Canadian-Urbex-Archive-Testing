@@ -70,7 +70,11 @@ export async function loadUserTheme(db, uid) {
     applyTheme(cached);
   }
 
-  // 2. Fetch from Firestore in background
+  // 2. Skip Firestore if already fetched once this session
+  const fetchedFlag = 'cua_theme_fetched_' + uid;
+  if (sessionStorage.getItem(fetchedFlag)) return;
+
+  // 3. Fetch from Firestore in background
   try {
     const ref = doc(db, 'users', uid);
     const snap = await getDoc(ref);
@@ -80,11 +84,13 @@ export async function loadUserTheme(db, uid) {
       firestoreTheme = data.theme || '';
     }
 
-    // 3. If Firestore value differs from cache, apply and cache it
+    // 4. If Firestore value differs from cache, apply and cache it
     if (firestoreTheme !== cached) {
       cacheTheme(firestoreTheme);
       applyTheme(firestoreTheme);
     }
+
+    sessionStorage.setItem(fetchedFlag, '1');
   } catch (e) {
     // Cache already applied — silently fall back
     if (!cached) {

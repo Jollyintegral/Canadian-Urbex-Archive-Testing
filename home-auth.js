@@ -3,6 +3,8 @@ import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { normalizeRole, roleLabel } from './role-utils.js';
 import { applyTheme, loadUserTheme, hidePageLoading, clearThemeCache } from './theme.js';
+import { initNotificationsUI } from './notifications.js';
+import { initReportButton } from './reports.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBqUaNlFlKcyl86kaDDN196eRTGOJtlxkY",
@@ -20,9 +22,15 @@ const googleProvider = new GoogleAuthProvider();
 let guestMode = sessionStorage.getItem('guestMode') === '1';
 
 async function loadRole(uid) {
+  const fetchedFlag = 'cua_user_fetched_' + uid;
+  const cached = normalizeRole(sessionStorage.getItem('userRole'));
+  if (cached && cached !== 'visitor' && sessionStorage.getItem(fetchedFlag)) return cached;
   const snap = await getDoc(doc(db, 'users', uid));
   const userDoc = snap.data() || null;
-  return normalizeRole((userDoc || {}).role || 'visitor');
+  const role = normalizeRole((userDoc || {}).role || 'visitor');
+  sessionStorage.setItem('userRole', role);
+  sessionStorage.setItem(fetchedFlag, '1');
+  return role;
 }
 
 function setAccountUi(user, role) {
@@ -105,6 +113,8 @@ onAuthStateChanged(auth, async (user) => {
     const role = await loadRole(user.uid);
     setAccountUi(user, role);
     await loadUserTheme(db, user.uid);
+    initNotificationsUI(db, user, role);
+    initReportButton(db, user);
   } else {
     applyTheme('');
     const wrap = document.getElementById('homeAccountMenuWrap');
