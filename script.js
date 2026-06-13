@@ -873,6 +873,7 @@ function addLocationControl() {
     let locationCircle = null;
     let lastUpdateTime = 0;
     let hasZoomed = false;
+    let positionAcquired = false;
     const THROTTLE_MS = 2000;
 
     L.DomEvent.disableClickPropagation(btn);
@@ -884,15 +885,21 @@ function addLocationControl() {
       }
 
       if (watching) {
+        if (!positionAcquired) {
+          // First position not yet acquired - don't allow toggle-off
+          return;
+        }
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
         watching = false;
+        positionAcquired = false;
         hasZoomed = false;
         if (locationMarker) { locationMarker.remove(); locationMarker = null; }
         if (locationCircle) { locationCircle.remove(); locationCircle = null; }
         return;
       }
 
+      positionAcquired = false;
       watching = true;
 
       function flashGreen() {
@@ -904,6 +911,7 @@ function addLocationControl() {
         const now = Date.now();
         if (now - lastUpdateTime < THROTTLE_MS) return;
         lastUpdateTime = now;
+        if (!positionAcquired) positionAcquired = true;
 
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         lastKnownUserLatLng = { lat, lng };
@@ -944,6 +952,7 @@ function addLocationControl() {
           navigator.geolocation.clearWatch(watchId);
           watchId = null;
           watching = false;
+          positionAcquired = false;
           hasZoomed = false;
           btn.classList.add('locate-btn--error');
           setTimeout(() => btn.classList.remove('locate-btn--error'), 1000);
@@ -1143,7 +1152,6 @@ bubbleExportBtn.title = 'Export data';
 bubbleExportBtn.setAttribute('aria-label', 'Export data');
 bubbleExportBtn.innerHTML = '<svg class="ctrl-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
-bottomToolsBubble.appendChild(bubbleFilterBtn);
 bottomToolsBubble.appendChild(bubbleExportBtn);
 
 // ── Abandonment Scanner ──
@@ -2032,6 +2040,7 @@ function runMapApp() {
       const sBtn = window.__settingsBtn;
       if (sBtn.parentNode) sBtn.parentNode.removeChild(sBtn);
       bottomToolsBubble.appendChild(sBtn);
+      bottomToolsBubble.appendChild(bubbleFilterBtn);
     }
 
     // Add spot
@@ -2952,6 +2961,12 @@ function createSpotPopup({ marker, spotId, name, desc, images = [], spotClass, m
         <div class="location-card-action-btn-inline location-card-expand-trigger" data-action="expand">
           Details
         </div>
+        <div class="location-card-action-btn-inline" data-action="directions">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11L11 5M7 5h4v4"/></svg> Directions
+        </div>
+        <div class="location-card-action-btn-inline" data-action="maps-pin">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1C5.2 1 3 3.2 3 6c0 3.5 5 9 5 9s5-5.5 5-9c0-2.8-2.2-5-5-5z"/><circle cx="8" cy="6" r="1.5"/></svg> Maps
+        </div>
       </div>
     </div>`;
 
@@ -3149,6 +3164,21 @@ function createSpotPopup({ marker, spotId, name, desc, images = [], spotClass, m
     // ── Comments button opens comments panel ──
     const commentsTrigger = wrap.querySelector('.location-card-actions-bar [data-action="comments"]');
     if (commentsTrigger) {
+    photosTrigger = wrap.querySelector('.location-card-actions-bar [data-action="photos"]');
+    dirTrigger = wrap.querySelector('.location-card-actions-bar [data-action="directions"]');
+    mapsPinTrigger = wrap.querySelector('.location-card-actions-bar [data-action="maps-pin"]');
+    if (dirTrigger) {
+      dirTrigger.onclick = e => {
+        e.stopPropagation();
+        window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+      };
+    }
+    if (mapsPinTrigger) {
+      mapsPinTrigger.onclick = e => {
+        e.stopPropagation();
+        window.open(`https://www.google.com/maps?q=${spotLatLng.lat},${spotLatLng.lng}`, '_blank', 'noopener,noreferrer');
+      };
+    }
       commentsTrigger.onclick = e => {
         e.stopPropagation();
         showComments();

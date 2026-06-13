@@ -273,10 +273,6 @@ function renderMobileNotifications(container) {
       container.style.display = 'none';
       const links = document.querySelectorAll('.header-center > .top-nav-link');
       links.forEach((l) => l.style.display = '');
-      const header = document.querySelector('header');
-      if (header) header.classList.remove('mobile-menu-open');
-      const toggle = document.querySelector('.mobile-menu-button');
-      if (toggle) { toggle.classList.remove('is-active'); toggle.setAttribute('aria-expanded', 'false'); }
     });
   }
 }

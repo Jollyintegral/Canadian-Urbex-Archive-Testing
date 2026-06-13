@@ -150,10 +150,11 @@ async function loadRole(uid) {
     currentUserDoc = cached;
   }
 
-  // Skip Firestore if already fetched once this session
+  // Skip Firestore if already fetched once this session (but not if cached role is stale/visitor)
   const fetchedFlag = 'cua_user_fetched_' + uid;
-  if (sessionStorage.getItem(fetchedFlag)) {
-    return normalizeRole((currentUserDoc || {}).role || 'visitor');
+  const cachedRole = normalizeRole((currentUserDoc || {}).role);
+  if (sessionStorage.getItem(fetchedFlag) && cachedRole && cachedRole !== 'visitor') {
+    return cachedRole;
   }
 
   // Fetch fresh from Firestore in background

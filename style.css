@@ -3297,6 +3297,9 @@ header {
   background: var(--profile-card-bg);
   padding: 12px;
   margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 
 .settings-profile-avatar {
@@ -3976,7 +3979,7 @@ header {
 
   .drawer-close-button {
     border: 1px solid rgba(var(--border-soft-rgb), 0.4);
-    background: rgba(21, 31, 54, 0.85);
+    background: rgba(var(--bg-control-rgb), 0.85);
     color: var(--text);
     width: 36px;
     height: 36px;
@@ -3984,14 +3987,32 @@ header {
     font-size: 18px;
     cursor: pointer;
   }
+  /* Hide desktop bell on mobile, show only in drawer */
+  .notif-bell-container { display: none !important; }
+  .notif-mobile-btn {
+    border: 1px solid rgba(var(--border-soft-rgb), 0.4);
+    background: rgba(var(--bg-control-rgb), 0.85);
+    color: var(--text);
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 18px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .notif-mobile-btn .notif-bell-icon { width: 18px; height: 18px; }
 
   .header-center .top-nav-link {
     font-size: 16px !important;
     font-weight: 700 !important;
     padding: 14px 16px !important;
     border-radius: 10px !important;
-    background: rgba(21, 31, 54, 0.55) !important;
-    color: rgba(220, 230, 255, 0.92) !important;
+    background: rgba(var(--bg-control-rgb), 0.55) !important;
+    color: var(--text-soft) !important;
     white-space: normal !important;
     display: flex !important;
     align-items: center !important;
@@ -4005,7 +4026,7 @@ header {
 
   .header-center .top-nav-link.is-active {
     color: var(--text-inverse) !important;
-    background: rgba(64, 97, 158, 0.55) !important;
+    background: rgba(var(--accent-rgb), 0.35) !important;
     text-decoration: none !important;
     box-shadow: inset 0 0 0 1px rgba(var(--border-rgb), 0.35);
   }
